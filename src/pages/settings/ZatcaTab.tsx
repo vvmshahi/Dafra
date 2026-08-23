@@ -8,7 +8,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { createPortal } from 'react-dom'
 import {
   ShieldCheck, ShieldX, Building2,
   CheckCircle2, AlertTriangle, ExternalLink, Lock,
@@ -18,7 +17,6 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import ComplianceReadinessCard from '@/components/compliance/ComplianceReadinessCard'
-import SandboxBranchOnboardingPanel from '@/components/zatca/SandboxBranchOnboardingPanel'
 import { ENABLE_OFFICIAL_SELLER_IDENTITY } from '@/lib/releaseFlags'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/Badge'
@@ -26,11 +24,8 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   getProductionOnboardingStatus,
   getZatcaConnectionState,
-  getSandboxDemoConnectionStatus,
-  getSandboxDemoOnboardingStatus,
-  runSandboxDemoOnboarding,
-  resetSandboxDemoOnboarding,
-  activateSandboxDemoConnection,
+  getSandboxOnboardingStatus,
+  onboardSandboxZatca,
   disconnectProductionZatca,
   isZatcaOtpRejection,
   onboardProductionZatca,
@@ -39,14 +34,9 @@ import {
   type ProductionOnboardingResponse,
   type ProductionOnboardingTraceEntry,
   type ProductionOnboardingStatus,
-  type ZatcaConnectionResolution,
   type ZatcaFunctionalityMap,
-  type SandboxDemoConnectionStatus,
-  type SandboxOnboardingStatus,
-  type SandboxResetResult,
-  runTradingSandboxV2Onboarding,
-  type TradingSandboxV2Event,
-  type TradingSandboxV2Status,
+  type SandboxOnboardingResponse,
+  type ZatcaConnectionResolution,
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch } from '@/types'
@@ -61,13 +51,11 @@ import {
 
 type BranchWithCert = Branch & {
   productionStatus?: ProductionOnboardingResponse | null
+  sandboxStatus?: SandboxOnboardingResponse | null
+  connectionState?: ZatcaConnectionResolution | null
 }
 
 const FATOORA_PORTAL_URL = 'https://fatoora.zatca.gov.sa/'
-const DEMO_TENANT_ID = 'ebf1144b-55ed-472a-99c9-23b5ee915351'
-const TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
-const SERVICE_BRANCH_ID = 'c30094d7-40ca-4d2e-833a-07aa18c4fa46'
-const SHOW_TRADING_SANDBOX_DEBUG = import.meta.env.DEV || import.meta.env.VITE_ENABLE_TRADING_SANDBOX_DEBUG === 'true'
 
 /* ── Tiny helpers ────────────────────────────────────────────────────────── */
 
@@ -127,7 +115,7 @@ function GuideModal({ onClose }: { onClose: () => void }) {
             href={FATOORA_PORTAL_URL}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-500 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-600"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-700"
           >
             <ExternalLink size={12} /> {t('guide.openPortal')}
           </a>
@@ -145,560 +133,6 @@ function GuideModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function TradingSandboxReconnect({
-  status,
-  connectionActive,
-  onStatusChange,
-  onConnectionChange,
-}: {
-  status: SandboxOnboardingStatus | null
-  connectionActive: boolean
-  onStatusChange: (status: SandboxOnboardingStatus) => void
-  onConnectionChange: (status: SandboxDemoConnectionStatus) => void
-}) {
-  const { t } = useTranslation('zatca')
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [otp, setOtp] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [progress, setProgress] = useState<string | null>(null)
-
-  const statusLabel = status?.status ?? 'not_started'
-  const canResume = !connectionActive && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready', 'failed'].includes(statusLabel))
-  const requiresOtp = !status || ['not_started', 'csr_ready', 'failed'].includes(statusLabel)
-  const otpValid = /^\d{6}$/.test(otp)
-
-  async function reconnect() {
-    setError(null)
-    setSuccess(null)
-    setProgress(null)
-    if (requiresOtp && !otpValid) {
-      setError(t('sandbox.reconnectOtpRequired'))
-      return
-    }
-    const enteredOtp = otp
-    let next = status
-    if (next?.status === 'failed') next = null
-    try {
-      setBusy(true)
-      setProgress(t('sandbox.reconnectProgressIdentity'))
-      if (!next || next.status === 'not_started') {
-        next = await runSandboxDemoOnboarding({ action: 'generate_csr', functionalityMap: '0100' })
-        onStatusChange(next)
-      }
-
-      if (next.status === 'csr_ready') {
-        setProgress(t('sandbox.reconnectProgressCompliance'))
-        setOtp('')
-        next = await runSandboxDemoOnboarding({
-          action: 'request_compliance_csid',
-          reconnect: { otp: enteredOtp },
-        })
-        onStatusChange(next)
-      }
-
-      if (next.status === 'compliance_csid_ready') {
-        setProgress(t('sandbox.reconnectProgressValidation'))
-        next = await runSandboxDemoOnboarding({
-          action: 'submit_compliance_documents',
-        })
-        onStatusChange(next)
-      }
-
-      if (next.status === 'compliance_passed') {
-        setProgress(t('sandbox.reconnectProgressProduction'))
-        next = await runSandboxDemoOnboarding({ action: 'request_sandbox_production_csid' })
-        onStatusChange(next)
-      }
-
-      if (next.status === 'sandbox_production_csid_ready') {
-        next = await runSandboxDemoOnboarding({ action: 'activate' })
-        onStatusChange(next)
-      }
-
-      if (next.status === 'active') {
-        const connection = await activateSandboxDemoConnection()
-        onConnectionChange(connection)
-        setSuccess(t('sandbox.reconnectSuccess'))
-        setProgress(null)
-        setOpen(false)
-        return
-      }
-
-      if (next.status === 'failed') {
-        setError(next.lastError || t('sandbox.reconnectFailed'))
-        setProgress(null)
-      } else if (next.status === 'csr_ready' || next.status === 'compliance_csid_ready' || next.status === 'compliance_checks_pending' || next.status === 'compliance_passed' || next.status === 'sandbox_production_csid_ready') {
-        setSuccess(t('sandbox.reconnectChecksRunning'))
-        setProgress(null)
-      } else if (next.status !== 'active') {
-        setError(t('sandbox.reconnectNeedsReview'))
-        setProgress(null)
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t('sandbox.reconnectFailed'))
-      setProgress(null)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-card">
-      <div className="flex flex-col gap-4 border-b border-amber-100 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-black text-gray-950">{t('sandbox.reconnectTitle')}</h3>
-            <Badge variant={connectionActive ? 'success' : 'warning'} dot>
-              {connectionActive ? t('status.active') : t(`sandbox.onboardingStatus.${statusLabel}`, { defaultValue: statusLabel })}
-            </Badge>
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
-        </div>
-        {canResume && (
-          <button
-            type="button"
-            onClick={() => { setError(null); setSuccess(null); setOpen(value => !value) }}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#1a3a28] disabled:opacity-50"
-          >
-            <Wifi size={13} /> {t('sandbox.reconnectButton')}
-          </button>
-        )}
-      </div>
-      <div className="grid gap-2 p-5 sm:grid-cols-2">
-        <InfoRow label={t('fields.business')} value="Kubri Demo" />
-        <InfoRow label={t('fields.branch')} value="Kubri Trading Demo" />
-        <InfoRow label={t('fields.environment')} value={t('sandbox.zatcaSandbox')} />
-        <InfoRow label={t('sandbox.currentCredential')} value={status?.lastError || statusLabel} />
-      </div>
-      {open && (
-        <div className="border-t border-amber-100 bg-gray-50/70 px-5 py-4">
-          <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectTitle')}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
-          {requiresOtp && (
-            <div className="mt-4">
-              <label htmlFor="trading-sandbox-otp" className="block text-xs font-bold text-gray-900">
-                {t('sandbox.reconnectOtpTitle')}
-              </label>
-              <p className="mt-1 text-[11px] leading-relaxed text-gray-600">
-                {t('sandbox.reconnectOtpHelp')}
-              </p>
-              <input
-                id="trading-sandbox-otp"
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="off"
-                maxLength={6}
-                value={otp}
-                onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder={t('sandbox.reconnectOtpPlaceholder')}
-                aria-describedby="trading-sandbox-otp-help"
-                className="mt-2 min-h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold tracking-[0.25em] text-gray-900 outline-none ring-[#0F2419] placeholder:tracking-normal focus:ring-2"
-              />
-              <p id="trading-sandbox-otp-help" className="mt-1 text-[11px] text-gray-500">
-                {t('sandbox.reconnectOtpFormat')}
-              </p>
-            </div>
-          )}
-          {busy && progress && (
-            <p role="status" className="mt-3 flex items-center gap-2 text-xs font-semibold text-gray-700">
-              <Loader2 size={13} className="animate-spin" /> {progress}
-            </p>
-          )}
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-            <button type="button" onClick={() => void reconnect()} disabled={busy || (requiresOtp && !otpValid)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">
-            {busy && <Loader2 size={13} className="animate-spin" />}
-            {busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}
-            </button>
-            {requiresOtp && (
-              <button type="button" onClick={() => setOtp('')} disabled={busy || otp.length === 0} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50">
-                {t('sandbox.reconnectOtpClear')}
-              </button>
-            )}
-          </div>
-          {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
-        </div>
-      )}
-      {success && <p className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-xs font-semibold text-emerald-800">{success}</p>}
-    </section>
-  )
-}
-
-type SandboxDebugStage =
-  | 'reset_started' | 'previous_state_archived' | 'reset_completed' | 'otp_ready'
-  | 'submit_started' | 'caller_authorized' | 'trading_scope_resolved'
-  | 'fresh_identity_started' | 'private_key_generated' | 'csr_generated'
-  | 'csr_key_match_verified' | 'credential_draft_saved'
-  | 'compliance_csid_request_started' | 'compliance_csid_response_received'
-  | 'compliance_validation_started' | 'compliance_validation_completed'
-  | 'production_csid_request_started' | 'production_csid_response_received'
-  | 'certificate_key_match_verified' | 'credential_activation_started'
-  | 'credential_activation_completed' | 'trading_mode_updated'
-  | 'onboarding_completed' | 'onboarding_failed'
-
-type SandboxDebugEvent = {
-  id: number
-  timestamp: string
-  stage: SandboxDebugStage
-  status: 'pending' | 'success' | 'failed'
-  code?: string
-  message?: string
-  httpStatus?: number
-  requestId?: string
-  operationId?: string
-  onboardingUid?: string
-}
-
-function debugSafeId(value: unknown): string | undefined {
-  return typeof value === 'string' && /^[0-9a-f-]{20,}$/i.test(value) ? value : undefined
-}
-
-function debugSafeMessage(value: unknown): string | undefined {
-  if (typeof value !== 'string' || value.length > 240) return undefined
-  if (/private[_ -]?key|secret|csid|token|cookie|authorization|encrypted|xml body|raw response/i.test(value)) return undefined
-  return value.replace(/[\r\t]+/g, ' ')
-}
-
-function debugDetails(value: unknown): Partial<SandboxDebugEvent> {
-  const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-  const payload = root.payload && typeof root.payload === 'object' ? root.payload as Record<string, unknown> : root
-  const details: Partial<SandboxDebugEvent> = {}
-  if (typeof payload.code === 'string' && /^[A-Z0-9_]+$/.test(payload.code)) details.code = payload.code
-  details.message = debugSafeMessage(payload.error)
-  details.requestId = debugSafeId(payload.requestId)
-  details.operationId = debugSafeId(payload.operationId ?? payload.credential_id)
-  details.onboardingUid = debugSafeId(payload.onboardingUid ?? payload.onboarding_uid)
-  if (typeof payload.upstreamStatus === 'number') details.httpStatus = payload.upstreamStatus
-  return Object.fromEntries(Object.entries(details).filter(([, item]) => item !== undefined))
-}
-
-function TradingSandboxV2Connector() {
-  const { t } = useTranslation('zatca')
-  const [otp, setOtp] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<TradingSandboxV2Status | null>(null)
-  const [events, setEvents] = useState<TradingSandboxV2Event[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [autoScroll, setAutoScroll] = useState(true)
-  const endRef = useRef<HTMLDivElement>(null)
-  const otpValid = /^\d{6}$/.test(otp)
-
-  useEffect(() => {
-    if (autoScroll) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [events, autoScroll])
-
-  async function submit() {
-    if (!otpValid) {
-      setError(t('sandbox.v2.otpRequired'))
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const next = await runTradingSandboxV2Onboarding(otp)
-      setStatus(next)
-      setEvents(next.events ?? [])
-      setOtp('')
-    } catch (cause) {
-      const payload = (cause as { payload?: { events?: TradingSandboxV2Event[]; error?: string; code?: string; stage?: string } })?.payload
-      if (Array.isArray(payload?.events)) setEvents(payload.events)
-      if (payload?.stage && !Array.isArray(payload?.events)) {
-        setEvents(previous => [...previous, {
-          event_at: new Date().toISOString(), stage: payload.stage!, status: 'failed',
-          safe_code: payload.code ?? null, safe_message: payload.error ?? null,
-        }])
-      }
-      setError(cause instanceof Error ? cause.message : t('sandbox.v2.failed'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function copyLog() {
-    if (navigator.clipboard) await navigator.clipboard.writeText(events.map(event => JSON.stringify(event)).join('\n'))
-  }
-
-  return (
-    <section className="overflow-hidden rounded-[1.35rem] border border-sky-200/80 bg-white shadow-card">
-      <div className="border-b border-sky-100 bg-[linear-gradient(120deg,#eff8ff,#f7fbff_55%,#fffaf0)] px-5 py-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-950 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100"><Cpu size={11} /> V2</span>
-              <h3 className="text-sm font-black text-gray-950">{t('sandbox.v2.title')}</h3>
-              <Badge variant={status?.ok ? 'success' : busy ? 'warning' : 'neutral'} dot>{status?.ok ? t('status.active') : busy ? t('status.checking') : t('sandbox.v2.ready')}</Badge>
-            </div>
-            <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-gray-600">{t('sandbox.v2.help')}</p>
-          </div>
-          <div className="rounded-xl border border-sky-100 bg-white/80 px-3 py-2 text-right text-[10px] font-bold text-sky-950">
-            <p>{t('sandbox.v2.environment')}</p>
-            <p className="mt-1 font-mono text-sky-700">0100 · V2</p>
-          </div>
-        </div>
-      </div>
-      <div className="grid gap-2 p-5 sm:grid-cols-3">
-        <InfoRow label={t('fields.business')} value="Kubri Demo" />
-        <InfoRow label={t('fields.branch')} value="Kubri Trading Demo" />
-        <InfoRow label={t('fields.environment')} value={t('sandbox.v2.environment')} />
-      </div>
-      <div className="border-t border-sky-100 bg-slate-50/70 px-5 py-4">
-        <label htmlFor="trading-sandbox-v2-otp" className="block text-xs font-black text-gray-900">{t('sandbox.v2.otpTitle')}</label>
-        <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.v2.otpHelp')}</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-          <input id="trading-sandbox-v2-otp" type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="off" maxLength={6} value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('sandbox.v2.otpPlaceholder')} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold tracking-[0.3em] text-gray-900 outline-none focus:ring-2 focus:ring-sky-800" />
-          <button type="button" onClick={() => void submit()} disabled={busy || !otpValid} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-950 px-4 text-xs font-black text-white transition-colors hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50">{busy && <Loader2 size={13} className="animate-spin" />}{busy ? t('sandbox.v2.submitting') : t('sandbox.v2.submit')}</button>
-          <button type="button" onClick={() => setOtp('')} disabled={busy || otp.length === 0} className="min-h-11 rounded-xl border border-gray-200 bg-white px-4 text-xs font-black text-gray-700 disabled:opacity-50">{t('sandbox.v2.clearOtp')}</button>
-        </div>
-        {error && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
-        {status && <div className="mt-3 grid gap-2 sm:grid-cols-3"><InfoRow label={t('sandbox.v2.stage')} value={status.stage} mono /><InfoRow label={t('sandbox.v2.certificateField')} value={status.productionCertificateField} mono /><InfoRow label={t('sandbox.v2.session')} value={status.sessionId ?? '—'} mono /></div>}
-      </div>
-      {events.length > 0 && <div className="border-t border-sky-100 bg-[#07131f] px-5 py-4 text-slate-100"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black tracking-wide text-sky-100">{t('sandbox.v2.debugTitle')}</p><p className="mt-1 text-[11px] text-slate-400">{t('sandbox.v2.latestStage')}: {events[events.length - 1].stage}</p></div><label className="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t('sandbox.debugAutoScroll')}</label></div><div className="mt-3 max-h-80 space-y-1 overflow-y-auto rounded-xl bg-slate-950 p-2 font-mono text-[10px]" aria-live="polite">{events.map((event, index) => <div key={`${event.event_at}-${index}`} className="rounded-lg border border-slate-800 px-2 py-1.5"><div className="flex flex-wrap gap-x-2"><span className="text-slate-500">{event.event_at}</span><span className="text-slate-200">{event.stage}</span><span className={event.status === 'success' ? 'text-emerald-400' : event.status === 'failed' ? 'text-red-400' : 'text-amber-300'}>{event.status}</span>{event.safe_code && <span className="text-fuchsia-300">{event.safe_code}</span>}{event.http_status && <span className="text-sky-300">HTTP {event.http_status}</span>}</div><p className="mt-0.5 text-slate-500">session={event.session_id ?? status?.sessionId ?? '—'}{event.request_id ? ` · request=${event.request_id}` : ''}</p>{event.safe_message && <p className="mt-0.5 text-slate-400">{event.safe_message}</p>}{event.non_secret_response_fields?.length ? <p className="mt-0.5 text-sky-300">fields: {event.non_secret_response_fields.join(', ')}</p> : null}{event.required_fields_present && <p className="mt-0.5 text-slate-500">required: {Object.entries(event.required_fields_present).map(([key, value]) => `${key}=${value ? 'yes' : 'no'}`).join(' · ')}</p>}{event.public_key_fingerprint_prefixes && Object.keys(event.public_key_fingerprint_prefixes).length > 0 && <p className="mt-0.5 text-amber-300">fingerprint prefixes: {Object.entries(event.public_key_fingerprint_prefixes).map(([key, value]) => `${key}=${value}`).join(' · ')}</p>}</div>)}<div ref={endRef} /></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void copyLog()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-black hover:bg-slate-800">{t('sandbox.v2.copyLog')}</button><button type="button" onClick={() => setEvents([])} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-black hover:bg-slate-800">{t('sandbox.debugClear')}</button></div></div>}
-    </section>
-  )
-}
-
-function TradingSandboxReconnectDebug({
-  status,
-  connectionActive,
-  onStatusChange,
-  onConnectionChange,
-}: {
-  status: SandboxOnboardingStatus | null
-  connectionActive: boolean
-  onStatusChange: (status: SandboxOnboardingStatus) => void
-  onConnectionChange: (status: SandboxDemoConnectionStatus) => void
-}) {
-  const { t } = useTranslation('zatca')
-  const [open, setOpen] = useState(!connectionActive)
-  const [busy, setBusy] = useState(false)
-  const [otp, setOtp] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [progress, setProgress] = useState<string | null>(null)
-  const [events, setEvents] = useState<SandboxDebugEvent[]>([])
-  const [autoScroll, setAutoScroll] = useState(true)
-  const [resetOpen, setResetOpen] = useState(false)
-  const [resetPhrase, setResetPhrase] = useState('')
-  const [resetBusy, setResetBusy] = useState(false)
-  const [resetError, setResetError] = useState<string | null>(null)
-  const sequence = useRef(0)
-  const endRef = useRef<HTMLDivElement>(null)
-
-  const statusLabel = status?.status ?? 'not_started'
-  const canResume = !connectionActive && status?.reconciliationStatus !== 'required' && (!status || ['not_started', 'csr_ready', 'compliance_csid_ready', 'compliance_checks_pending', 'compliance_passed', 'sandbox_production_csid_ready', 'failed'].includes(statusLabel))
-  const requiresOtp = !status || ['not_started', 'csr_ready', 'failed'].includes(statusLabel)
-  const otpValid = /^\d{6}$/.test(otp)
-
-  const addEvent = useCallback((stage: SandboxDebugStage, eventStatus: SandboxDebugEvent['status'], extra: Partial<SandboxDebugEvent> = {}) => {
-    const id = ++sequence.current
-    setEvents(previous => [...previous, { id, timestamp: new Date().toISOString(), stage, status: eventStatus, ...extra }])
-    return id
-  }, [])
-
-  const finishEvent = useCallback((id: number, eventStatus: SandboxDebugEvent['status'], extra: Partial<SandboxDebugEvent> = {}) => {
-    setEvents(previous => previous.map(event => event.id === id ? { ...event, status: eventStatus, ...extra } : event))
-  }, [])
-
-  useEffect(() => {
-    if (autoScroll) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [events, autoScroll])
-
-  function statusDetails(value: unknown): Partial<SandboxDebugEvent> {
-    const root = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-    return {
-      ...debugDetails(value),
-      operationId: debugSafeId(root.operationId) ?? status?.operationId ?? undefined,
-      onboardingUid: debugSafeId(root.onboardingUid) ?? status?.onboardingUid ?? undefined,
-      requestId: debugSafeId(root.requestId) ?? debugDetails(value).requestId,
-    }
-  }
-
-  async function trace<T>(stage: SandboxDebugStage, task: () => Promise<T>): Promise<T> {
-    const id = addEvent(stage, 'pending', { operationId: status?.operationId ?? undefined, onboardingUid: status?.onboardingUid ?? undefined })
-    try {
-      const result = await task()
-      finishEvent(id, 'success', statusDetails(result))
-      return result
-    } catch (cause) {
-      finishEvent(id, 'failed', debugDetails(cause))
-      throw cause
-    }
-  }
-
-  function prepareOtp() {
-    if (!events.some(event => event.stage === 'otp_ready')) {
-      addEvent('otp_ready', 'success', { message: t('sandbox.debugOtpReady') })
-    }
-  }
-
-  async function resetSandbox() {
-    const startId = addEvent('reset_started', 'pending', { operationId: status?.operationId ?? undefined, onboardingUid: status?.onboardingUid ?? undefined })
-    setResetBusy(true)
-    setResetError(null)
-    try {
-      const result = await resetSandboxDemoOnboarding()
-      const reset = result as SandboxResetResult & SandboxOnboardingStatus
-      finishEvent(startId, 'success', statusDetails(reset))
-      addEvent('previous_state_archived', 'success', { operationId: debugSafeId(reset.credential_id), onboardingUid: debugSafeId(reset.onboarding_uid), message: t('sandbox.debugPreviousArchived') })
-      addEvent('reset_completed', 'success', { message: t('sandbox.debugResetCompleted') })
-      onStatusChange(reset)
-      setOtp('')
-      setOpen(true)
-      setResetOpen(false)
-      setResetPhrase('')
-      setSuccess(t('sandbox.resetCompleted'))
-      prepareOtp()
-    } catch (cause) {
-      finishEvent(startId, 'failed', debugDetails(cause))
-      setResetError(debugDetails(cause).message ?? t('sandbox.resetFailed'))
-    } finally {
-      setResetBusy(false)
-    }
-  }
-
-  async function reconnect() {
-    setError(null)
-    setSuccess(null)
-    setProgress(null)
-    if (requiresOtp && !otpValid) {
-      setError(t('sandbox.reconnectOtpRequired'))
-      return
-    }
-    const enteredOtp = otp
-    let next = status
-    let authorityRecorded = false
-    const submitId = addEvent('submit_started', 'pending', { operationId: status?.operationId ?? undefined, onboardingUid: status?.onboardingUid ?? undefined })
-    try {
-      setBusy(true)
-      if (!next || next.status === 'not_started' || next.status === 'failed') {
-        setProgress(t('sandbox.reconnectProgressIdentity'))
-        next = await trace('fresh_identity_started', () => runSandboxDemoOnboarding({ action: 'generate_csr', functionalityMap: '0100' }))
-        if (!authorityRecorded) {
-          addEvent('caller_authorized', 'success', statusDetails(next))
-          addEvent('trading_scope_resolved', 'success', statusDetails(next))
-          authorityRecorded = true
-        }
-        addEvent('private_key_generated', 'success', statusDetails(next))
-        addEvent('csr_generated', 'success', statusDetails(next))
-        addEvent('csr_key_match_verified', 'success', statusDetails(next))
-        addEvent('credential_draft_saved', 'success', statusDetails(next))
-        onStatusChange(next)
-      }
-      if (next.status === 'csr_ready') {
-        setProgress(t('sandbox.reconnectProgressCompliance'))
-        setOtp('')
-        next = await trace('compliance_csid_request_started', () => runSandboxDemoOnboarding({ action: 'request_compliance_csid', reconnect: { otp: enteredOtp } }))
-        if (!authorityRecorded) {
-          addEvent('caller_authorized', 'success', statusDetails(next))
-          addEvent('trading_scope_resolved', 'success', statusDetails(next))
-          authorityRecorded = true
-        }
-        addEvent('compliance_csid_response_received', 'success', statusDetails(next))
-        onStatusChange(next)
-      }
-      if (next.status === 'compliance_csid_ready') {
-        setProgress(t('sandbox.reconnectProgressValidation'))
-        next = await trace('compliance_validation_started', () => runSandboxDemoOnboarding({ action: 'submit_compliance_documents' }))
-        if (!authorityRecorded) {
-          addEvent('caller_authorized', 'success', statusDetails(next))
-          addEvent('trading_scope_resolved', 'success', statusDetails(next))
-          authorityRecorded = true
-        }
-        addEvent('compliance_validation_completed', 'success', statusDetails(next))
-        onStatusChange(next)
-      }
-      if (next.status === 'compliance_passed') {
-        setProgress(t('sandbox.reconnectProgressProduction'))
-        next = await trace('production_csid_request_started', () => runSandboxDemoOnboarding({ action: 'request_sandbox_production_csid' }))
-        if (!authorityRecorded) {
-          addEvent('caller_authorized', 'success', statusDetails(next))
-          addEvent('trading_scope_resolved', 'success', statusDetails(next))
-          authorityRecorded = true
-        }
-        addEvent('production_csid_response_received', 'success', statusDetails(next))
-        addEvent('certificate_key_match_verified', 'success', statusDetails(next))
-        onStatusChange(next)
-      }
-      if (next.status === 'sandbox_production_csid_ready') {
-        next = await trace('credential_activation_started', () => runSandboxDemoOnboarding({ action: 'activate' }))
-        if (!authorityRecorded) {
-          addEvent('caller_authorized', 'success', statusDetails(next))
-          addEvent('trading_scope_resolved', 'success', statusDetails(next))
-          authorityRecorded = true
-        }
-        addEvent('credential_activation_completed', 'success', statusDetails(next))
-        onStatusChange(next)
-      }
-      if (next.status === 'active') {
-        const connection = await activateSandboxDemoConnection()
-        onConnectionChange(connection)
-        addEvent('trading_mode_updated', 'success', statusDetails(connection))
-        addEvent('onboarding_completed', 'success', statusDetails(next))
-        finishEvent(submitId, 'success', statusDetails(next))
-        setSuccess(t('sandbox.reconnectSuccess'))
-        setProgress(null)
-        setOpen(false)
-        return
-      }
-      finishEvent(submitId, 'success', statusDetails(next))
-      setSuccess(next.status === 'failed' ? (next.lastError || t('sandbox.reconnectFailed')) : t('sandbox.reconnectChecksRunning'))
-      setProgress(null)
-    } catch (cause) {
-      const details = debugDetails(cause)
-      addEvent('onboarding_failed', 'failed', details)
-      finishEvent(submitId, 'failed', details)
-      setError(details.message ?? t('sandbox.reconnectFailed'))
-      setProgress(null)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function copyDebugLog() {
-    const text = events.map(event => JSON.stringify(event)).join('\n')
-    if (navigator.clipboard) await navigator.clipboard.writeText(text)
-  }
-
-  return (
-    <section className="overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-card">
-      <div className="flex flex-col gap-4 border-b border-amber-100 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-black text-gray-950">{t('sandbox.reconnectTitle')}</h3>
-            <Badge variant={connectionActive ? 'success' : 'warning'} dot>{connectionActive ? t('status.active') : t(`sandbox.onboardingStatus.${statusLabel}`, { defaultValue: statusLabel })}</Badge>
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canResume && <button type="button" onClick={() => { setOpen(value => !value); if (!open && requiresOtp) prepareOtp() }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 py-2 text-xs font-bold text-white hover:bg-[#1a3a28]"><Wifi size={13} /> {t('sandbox.reconnectButton')}</button>}
-          {!connectionActive && <button type="button" onClick={() => { setResetPhrase(''); setResetError(null); setResetOpen(true) }} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200 bg-white px-4 py-2 text-xs font-bold text-amber-900 hover:bg-amber-50">{t('sandbox.resetButton')}</button>}
-        </div>
-      </div>
-      <div className="grid gap-2 p-5 sm:grid-cols-2">
-        <InfoRow label={t('fields.business')} value="Kubri Demo" />
-        <InfoRow label={t('fields.branch')} value="Kubri Trading Demo" />
-        <InfoRow label={t('fields.environment')} value={t('sandbox.zatcaSandbox')} />
-        <InfoRow label={t('sandbox.currentCredential')} value={status?.lastError || statusLabel} />
-      </div>
-      {open && (
-        <div className="border-t border-amber-100 bg-gray-50/70 px-5 py-4">
-          <p className="text-xs font-semibold text-gray-900">{t('sandbox.reconnectTitle')}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectHelp')}</p>
-          {requiresOtp && <div className="mt-4"><label htmlFor="trading-sandbox-otp" className="block text-xs font-bold text-gray-900">{t('sandbox.reconnectOtpTitle')}</label><p className="mt-1 text-[11px] leading-relaxed text-gray-600">{t('sandbox.reconnectOtpHelp')}</p><input id="trading-sandbox-otp" type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="off" maxLength={6} value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('sandbox.reconnectOtpPlaceholder')} className="mt-2 min-h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold tracking-[0.25em] text-gray-900 outline-none focus:ring-2 focus:ring-[#0F2419]" /><p className="mt-1 text-[11px] text-gray-500">{t('sandbox.reconnectOtpFormat')}</p></div>}
-          {busy && progress && <p role="status" className="mt-3 flex items-center gap-2 text-xs font-semibold text-gray-700"><Loader2 size={13} className="animate-spin" /> {progress}</p>}
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><button type="button" onClick={() => void reconnect()} disabled={busy || (requiresOtp && !otpValid)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0F2419] px-4 text-xs font-bold text-white hover:bg-[#1a3a28] disabled:cursor-not-allowed disabled:opacity-50">{busy && <Loader2 size={13} className="animate-spin" />}{busy ? t('sandbox.reconnectSubmitting') : t('sandbox.reconnectSubmit')}</button>{requiresOtp && <button type="button" onClick={() => setOtp('')} disabled={busy || otp.length === 0} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-gray-200 bg-white px-4 text-xs font-bold text-gray-700 disabled:opacity-50">{t('sandbox.reconnectOtpClear')}</button>}</div>
-          {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{error}</p>}
-        </div>
-      )}
-      {events.length > 0 && <div className="border-t border-amber-100 bg-slate-950 px-5 py-4 text-slate-100"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-bold">{t('sandbox.debugTitle')}</p><p className="mt-1 text-[11px] text-slate-400">{t('sandbox.debugLatestStage')}: {events[events.length - 1].stage}</p></div><label className="flex items-center gap-2 text-[11px] text-slate-300"><input type="checkbox" checked={autoScroll} onChange={event => setAutoScroll(event.target.checked)} />{t('sandbox.debugAutoScroll')}</label></div><div className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded-lg bg-slate-900 p-2 font-mono text-[10px]" aria-live="polite">{events.map(event => <div key={event.id} className="rounded border border-slate-800 px-2 py-1"><div className="flex flex-wrap gap-x-2"><span className="text-slate-500">{event.timestamp}</span><span className="text-slate-200">{event.stage}</span><span className={event.status === 'success' ? 'text-emerald-400' : event.status === 'failed' ? 'text-red-400' : 'text-amber-300'}>{event.status}</span>{event.code && <span className="text-fuchsia-300">{event.code}</span>}{event.httpStatus && <span className="text-sky-300">HTTP {event.httpStatus}</span>}</div>{(event.message || event.requestId || event.operationId || event.onboardingUid) && <div className="mt-0.5 break-all text-slate-400">{event.message} {event.requestId && `request=${event.requestId} `}{event.operationId && `operation=${event.operationId} `}{event.onboardingUid && `uid=${event.onboardingUid}`}</div>}</div>)}<div ref={endRef} /></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void copyDebugLog()} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-bold hover:bg-slate-800">{t('sandbox.debugCopy')}</button><button type="button" onClick={() => setEvents([])} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-bold hover:bg-slate-800">{t('sandbox.debugClear')}</button></div></div>}
-      {success && <p className="border-t border-emerald-100 bg-emerald-50 px-5 py-3 text-xs font-semibold text-emerald-800">{success}</p>}
-      {resetOpen && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4"><section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="sandbox-reset-title"><h2 id="sandbox-reset-title" className="text-base font-bold text-gray-900">{t('sandbox.resetTitle')}</h2><p className="mt-2 text-sm leading-6 text-gray-600">{t('sandbox.resetBody')}</p><label htmlFor="sandbox-reset-confirmation" className="mt-4 block text-xs font-bold text-gray-900">{t('sandbox.resetConfirmationLabel')}</label><input id="sandbox-reset-confirmation" value={resetPhrase} onChange={event => setResetPhrase(event.target.value)} autoComplete="off" className="mt-2 min-h-10 w-full rounded-xl border border-gray-200 px-3 text-sm font-semibold uppercase tracking-wide outline-none focus:ring-2 focus:ring-amber-700" />{resetError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{resetError}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" disabled={resetBusy} onClick={() => setResetOpen(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-bold text-gray-700">{t('common:cancel')}</button><button type="button" disabled={resetBusy || resetPhrase !== 'RESET SANDBOX'} onClick={() => void resetSandbox()} className="rounded-xl bg-amber-800 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{resetBusy ? t('sandbox.resetSubmitting') : t('sandbox.resetConfirm')}</button></div></section></div>}
-    </section>
-  )
-}
-
 /* ── Production onboarding orchestrator ─────────────────────────────────── */
 
 const PRODUCTION_STEPS: Array<{ key: ProductionOnboardingStatus }> = [
@@ -707,30 +141,23 @@ const PRODUCTION_STEPS: Array<{ key: ProductionOnboardingStatus }> = [
 ]
 
 const FUNCTIONALITY_OPTIONS: Array<{
-  value: ZatcaInvoiceCapability
-  key: 'simplified' | 'both'
+  value: ZatcaFunctionalityMap
+  key: 'simplified' | 'standard' | 'both'
 }> = [
-  { value: NORMAL_ONBOARDING_CAPABILITIES[0], key: 'simplified' },
-  { value: NORMAL_ONBOARDING_CAPABILITIES[1], key: 'both' },
+  { value: '0100', key: 'simplified' }, { value: '1000', key: 'standard' }, { value: '1100', key: 'both' },
 ]
 
 const DISCONNECT_CONFIRMATION = 'DELETE ZATCA CONNECTION'
 const SHOW_ZATCA_TRACE = import.meta.env.DEV && import.meta.env.VITE_SHOW_ZATCA_DEBUG_TRACE === 'true'
 
 function functionalityLabel(value: ZatcaFunctionalityMap | string | undefined, t: ReturnType<typeof useTranslation>['t']): string {
-  const capability = value === '0100' || value === '1000' || value === '1100'
-    ? capabilityForFunctionalityMap(value)
-    : null
-  const option = FUNCTIONALITY_OPTIONS.find(item => item.value === capability)
-  if (value === '1000') return `${t('functionality.standard.label')} (1000)`
+  const option = FUNCTIONALITY_OPTIONS.find(item => item.value === value)
   return option ? t(`functionality.${option.key}.label`) : t('functionality.notSelected')
 }
 
 function formatDateTime(value: string | null | undefined, locale = 'en-SA'): string {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString(locale, {
+  return new Date(value).toLocaleString(locale, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -827,8 +254,7 @@ function ProductionConnectionStatus({
   onReconnect: () => void
   onRemove: () => void
 }) {
-  const { t, i18n } = useTranslation('zatca')
-  const dateLocale = i18n.resolvedLanguage?.startsWith('ar') ? 'ar-SA' : 'en-SA'
+  const { t } = useTranslation('zatca')
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
@@ -851,6 +277,12 @@ function ProductionConnectionStatus({
         <InfoRow label={t('fields.productionCsid')} value={status.productionCsidExists ? t('status.stored') : t('status.missing')} />
         <InfoRow label={t('fields.status')} value={safeStatusText(status.onboardingStatus, t)} />
         <InfoRow label={t('fields.lastUpdated')} value={formatDateTime(status.updatedAt, dateLocale)} />
+      </div>
+
+      <div className="rounded-2xl border border-gold-200 bg-gold-50 px-3.5 py-3">
+        <p className="text-[11px] text-gold-900 leading-relaxed">
+          {t('connection.featureFlagHelp')}
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-4">
@@ -1380,11 +812,181 @@ function ProductionOnboardingPanel({
   )
 }
 
+function SandboxOnboardingPanel({
+  branch,
+  initialStatus,
+  onStatusChange,
+}: {
+  branch: BranchWithCert
+  initialStatus?: SandboxOnboardingResponse | null
+  onStatusChange: (status: SandboxOnboardingResponse) => void
+}) {
+  const [status, setStatus] = useState<SandboxOnboardingResponse | null>(initialStatus ?? null)
+  const [otp, setOtp] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => { setStatus(initialStatus ?? null) }, [initialStatus])
+
+  useEffect(() => {
+    let mounted = true
+    getSandboxOnboardingStatus(branch.id, branch.tenant_id)
+      .then(next => { if (mounted) { setStatus(next); onStatusChange(next) } })
+      .catch(() => { if (mounted) setError('Unable to load Sandbox onboarding status.') })
+    return () => { mounted = false }
+  }, [branch.id, branch.tenant_id, onStatusChange])
+
+  const current = status?.status ?? 'not_started'
+  const reconciliationBlocked = !!status?.operationInProgress && status?.reconciliationStatus === 'required'
+  const nextAction = reconciliationBlocked ? null
+    : current === 'not_started' ? 'generate_csr'
+    : current === 'csr_ready' ? 'request_compliance_csid'
+    : current === 'compliance_csid_ready' ? 'submit_compliance_documents'
+    : current === 'compliance_passed' ? 'request_sandbox_production_csid'
+    : current === 'sandbox_production_csid_ready' ? 'activate'
+    : current === 'failed' ? 'retry_failed_step'
+    : null
+  const needsOtp = nextAction === 'request_compliance_csid'
+    || (nextAction === 'retry_failed_step' && status?.failedStep === 'request_compliance_csid')
+  const steps = [
+    ['generate_csr', 'CSR generated'],
+    ['request_compliance_csid', 'Sandbox Compliance CSID'],
+    ['submit_compliance_documents', 'Kubri safety samples'],
+    ['request_sandbox_production_csid', 'Sandbox operational CSID'],
+    ['activate', 'ZATCA Sandbox Connected'],
+  ] as const
+  const completed = new Set(status?.completedSteps ?? [])
+  const requiredSamples = [
+    'simplified_invoice', 'simplified_credit_note', 'simplified_debit_note',
+    'standard_invoice', 'standard_credit_note', 'standard_debit_note',
+  ]
+  const sampleLabel: Record<string, string> = {
+    simplified_invoice: 'Simplified Invoice',
+    simplified_credit_note: 'Simplified Credit Note',
+    simplified_debit_note: 'Simplified Debit Note',
+    standard_invoice: 'Standard Invoice',
+    standard_credit_note: 'Standard Credit Note',
+    standard_debit_note: 'Standard Debit Note',
+  }
+  const sampleByType = new Map((status?.complianceSampleResults ?? []).map(sample => [sample.type, sample]))
+  const sampleDisplayStatus = (type: string): 'pending' | 'running' | 'passed' | 'failed' => {
+    const sample = sampleByType.get(type)
+    if (sample?.status === 'accepted') return 'passed'
+    if (sample?.status === 'blocked' || sample?.status === 'ambiguous_failed') return 'failed'
+    if (nextAction === 'submit_compliance_documents' && current === 'compliance_checks_pending') return 'running'
+    return 'pending'
+  }
+
+  const runNext = async () => {
+    if (!nextAction || (needsOtp && !/^\d{6}$/.test(otp))) {
+      setError(needsOtp ? 'Enter the six-digit Developer Portal Sandbox OTP.' : 'This Sandbox onboarding step is not available yet.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await onboardSandboxZatca({
+        branchId: branch.id,
+        tenantId: branch.tenant_id,
+        action: nextAction,
+        otp: needsOtp ? otp : undefined,
+        functionalityMap: nextAction === 'generate_csr' ? '1100' : undefined,
+      })
+      setStatus(next)
+      onStatusChange(next)
+      if (nextAction === 'request_compliance_csid') setOtp('')
+    } catch (err: any) {
+      setError(err?.message || 'Sandbox onboarding step failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-2xl border border-sky-100 bg-sky-50 p-4">
+        <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-sky-700" />
+        <div>
+          <p className="text-sm font-semibold text-sky-900">Developer Portal Integration Sandbox</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-sky-800">This branch uses its own backend-generated CSR, keypair, test credentials, and Sandbox submission route.</p>
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <InfoRow label="Branch" value={branch.name} />
+        <InfoRow label="Environment" value="Sandbox" />
+        <InfoRow label="Capability" value="1100 · Standard + Simplified" />
+      </div>
+      {needsOtp && (
+        <div>
+          <label className="text-[11px] font-semibold text-gray-700">Developer Portal Sandbox OTP</label>
+          <input
+            value={otp}
+            onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="6-digit OTP"
+            className="input mt-2 text-center font-mono text-2xl"
+            disabled={loading}
+          />
+          <p className="mt-1 text-[10px] text-gray-500">For the official Integration Sandbox test account, enter the portal-provided six-digit OTP.</p>
+        </div>
+      )}
+      <div className="grid gap-2 sm:grid-cols-5">
+        {steps.map(([key, label]) => (
+          <div key={key} className={`rounded-xl border px-2.5 py-2 text-center ${completed.has(key) || current === key ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-400'}`}>
+            <CheckCircle2 size={13} className="mx-auto mb-1" />
+            <p className="text-[10px] font-semibold">{label}</p>
+          </div>
+        ))}
+      </div>
+      {error && <p className="rounded-xl border border-red-100 bg-red-50 p-3 text-[11px] text-red-700">{error}</p>}
+      {status?.lastError && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] text-amber-800">{status.lastError}</p>}
+      {reconciliationBlocked && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] text-amber-800">The prior Sandbox operation needs result verification. No duplicate request will be sent.</p>}
+      <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Sandbox status</p>
+          <p className="mt-1 text-xs font-semibold text-gray-800">{current === 'active' ? 'Sandbox onboarding connected' : current.replaceAll('_', ' ')}</p>
+          {current === 'active' && <p className="mt-1 text-[10px] leading-relaxed text-gray-500">Connected confirms onboarding readiness only. Reporting or Clearance is verified only after an accepted Sandbox submission.</p>}
+        </div>
+        {nextAction && <button type="button" onClick={runNext} disabled={loading} className="btn-primary inline-flex items-center gap-2 disabled:opacity-50">
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />}
+          {nextAction === 'generate_csr' ? 'Generate backend CSR' : nextAction === 'request_compliance_csid' ? 'Request Sandbox Compliance CSID' : nextAction === 'submit_compliance_documents' ? 'Run compliance samples' : nextAction === 'request_sandbox_production_csid' ? 'Request Sandbox operational CSID' : nextAction === 'activate' ? 'Activate Sandbox' : 'Retry failed step'}
+        </button>}
+      </div>
+      <div className="border-t border-gray-100 pt-4">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Profile 1100 Kubri safety samples</p>
+        <p className="mt-1 text-[10px] leading-relaxed text-gray-500">These six samples are Kubri’s safety and completeness policy, not a claim about an official Developer Portal requirement.</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {requiredSamples.map(type => {
+            const sampleStatus = sampleDisplayStatus(type)
+            const tone = sampleStatus === 'passed'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : sampleStatus === 'failed'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : sampleStatus === 'running'
+                  ? 'border-sky-200 bg-sky-50 text-sky-700'
+                  : 'border-gray-200 bg-gray-50 text-gray-500'
+            return <div key={type} className={`flex items-center justify-between rounded-lg border px-3 py-2 text-[11px] ${tone}`}>
+              <span className="font-medium">{sampleLabel[type]}</span>
+              <span className="font-semibold uppercase">{sampleStatus}</span>
+            </div>
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Branch accordion row (FIX 2) ────────────────────────────────────────── */
 
 function branchSummaryKey(bc: BranchWithCert): string {
   const phase = bc.zatca_phase ?? 1
   if (phase < 2) return 'summary.requiresPhase2'
+  if (bc.zatca_environment === 'sandbox') {
+    if (bc.connectionState?.connection_state === 'connected') return 'summary.connected'
+    if (bc.connectionState?.connection_state === 'onboarding') return 'summary.checking'
+    return 'summary.available'
+  }
   if (bc.productionStatus === undefined) return 'summary.checking'
   if (bc.productionStatus?.onboardingStatus === 'production_connected') {
     return 'summary.connected'
@@ -1395,27 +997,45 @@ function branchSummaryKey(bc: BranchWithCert): string {
   return 'summary.available'
 }
 
-function BranchRow({
-  bc, onOpen,
+function BranchAccordionRow({
+  bc, isExpanded, onToggle, onProductionStatusUpdate, onSandboxStatusUpdate,
 }: {
   bc: BranchWithCert
-  onOpen: (branchId: string, trigger: HTMLButtonElement) => void
+  isExpanded: boolean
+  onToggle: () => void
+  onProductionStatusUpdate: (branchId: string, status: ProductionOnboardingResponse) => void
+  onSandboxStatusUpdate: (branchId: string, status: SandboxOnboardingResponse) => void
 }) {
   const { t } = useTranslation('zatca')
   const phase = bc.zatca_phase ?? 1
+  const isSandbox = bc.zatca_environment === 'sandbox'
   const productionConnected = bc.productionStatus?.onboardingStatus === 'production_connected'
+  const sandboxConnected = bc.connectionState?.connection_state === 'connected'
+  const sandboxState = bc.connectionState?.connection_state ?? 'not_started'
   const productionDisconnected = bc.productionStatus?.onboardingStatus === 'disconnected'
-  const summaryCfg = productionConnected
+  const summaryCfg = isSandbox
+    ? sandboxConnected
+      ? { variant: 'success' as const, label: 'Sandbox onboarding connected' }
+      : sandboxState === 'onboarding'
+        ? { variant: 'info' as const, label: 'Sandbox onboarding' }
+        : sandboxState === 'failed'
+          ? { variant: 'danger' as const, label: 'Sandbox setup failed' }
+          : { variant: 'neutral' as const, label: 'Sandbox setup pending' }
+    : productionConnected
     ? { variant: 'success' as const, label: t('status.connected') }
     : productionDisconnected
     ? { variant: 'neutral' as const, label: t('status.disconnected') }
     : { variant: 'neutral' as const, label: t('status.ready') }
+  const handleProductionStatusChange = useCallback((nextStatus: ProductionOnboardingResponse) => {
+    onProductionStatusUpdate(bc.id, nextStatus)
+  }, [bc.id, onProductionStatusUpdate])
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-primary-950/10 bg-white shadow-card transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:shadow-card-md">
+    <div className="card overflow-hidden transition-all duration-150 hover:border-primary-100 hover:shadow-card-md">
+      {/* Collapsed header row — always visible */}
       <button
-        onClick={event => onOpen(bc.id, event.currentTarget)}
-        className="w-full flex items-center gap-3 border-s-4 border-gold-500 px-4 py-4 hover:bg-primary-50/50 transition-colors text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
-        aria-haspopup="dialog"
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-4 hover:bg-primary-50/50 transition-colors text-left"
       >
         <div className="w-10 h-10 rounded-2xl bg-primary-50 ring-1 ring-primary-100 flex items-center justify-center flex-shrink-0">
           <Building2 size={16} className="text-primary-600" />
@@ -1425,13 +1045,13 @@ function BranchRow({
           <p className="text-[11px] text-gray-500 mt-1 truncate">{t(branchSummaryKey(bc))}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {phase >= 2 && productionConnected && (
+          {phase >= 2 && (isSandbox ? sandboxConnected : productionConnected) && (
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
               productionConnected
                 ? 'bg-emerald-100 text-emerald-700'
                 : 'bg-amber-100 text-amber-700'
             }`}>
-              {t('environment.production')}
+              {isSandbox ? 'Sandbox' : t('environment.production')}
             </span>
           )}
           {phase >= 2 && <Badge variant={summaryCfg.variant} dot>{summaryCfg.label}</Badge>}
@@ -1442,144 +1062,23 @@ function BranchRow({
           )}
           <ChevronDown
             size={15}
-            className="text-gray-400"
+            className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
           />
         </div>
       </button>
-    </div>
-  )
-}
 
-function ProductionBranchOnboardingCard({
-  branch,
-  onStatusChange,
-}: {
-  branch: BranchWithCert
-  onStatusChange: (branchId: string, status: ProductionOnboardingResponse) => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [connection, setConnection] = useState<ZatcaConnectionResolution | null>(null)
-
-  const refreshConnection = useCallback(async () => {
-    try {
-      setConnection(await getZatcaConnectionState(branch.id))
-    } catch {
-      setConnection(null)
-    }
-  }, [branch.id])
-
-  useEffect(() => { void refreshConnection() }, [refreshConnection])
-
-  const label = connection?.connection_state === 'connected'
-    ? 'ZATCA Production Connected'
-    : connection?.connection_state === 'failed'
-      ? 'Production onboarding failed'
-      : connection?.connection_state === 'onboarding'
-        ? 'Production onboarding'
-        : 'Production setup pending'
-  const tone = connection?.connection_state === 'connected'
-    ? 'bg-emerald-100 text-emerald-700'
-    : connection?.connection_state === 'failed'
-      ? 'bg-red-100 text-red-700'
-      : connection?.connection_state === 'onboarding'
-        ? 'bg-amber-100 text-amber-800'
-        : 'bg-gray-100 text-gray-700'
-
-  return <section data-zatca-branch-card={branch.id} className="overflow-hidden rounded-2xl border border-primary-950/10 bg-white shadow-card">
-    <button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} className="flex w-full items-center gap-3 border-s-4 border-gold-500 px-4 py-4 text-start transition-colors hover:bg-primary-50/50">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 ring-1 ring-primary-100"><Building2 size={16} /></div>
-      <div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-gray-950" dir="auto">{branch.name}</p><p className="mt-1 text-[11px] text-gray-500">FATOORA Production</p></div>
-      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{label}</span>
-      <ChevronDown size={15} className={`text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-    </button>
-    {expanded && <div className="border-t border-gray-100 p-5"><ProductionOnboardingPanel branch={branch} initialStatus={branch.productionStatus} onStatusChange={status => { onStatusChange(branch.id, status); void refreshConnection() }} /></div>}
-  </section>
-}
-
-function ZatcaBranchModal({
-  branch, onClose, onProductionStatusUpdate, returnFocusRef,
-}: {
-  branch: BranchWithCert
-  onClose: () => void
-  onProductionStatusUpdate: (branchId: string, status: ProductionOnboardingResponse) => void
-  returnFocusRef: React.MutableRefObject<HTMLButtonElement | null>
-}) {
-  const { t } = useTranslation('zatca')
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const phase = branch.zatca_phase ?? 1
-  const handleProductionStatusChange = useCallback((nextStatus: ProductionOnboardingResponse) => {
-    onProductionStatusUpdate(branch.id, nextStatus)
-  }, [branch.id, onProductionStatusUpdate])
-
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const frame = window.requestAnimationFrame(() => {
-      dialogRef.current?.querySelector<HTMLElement>('button, input, [href]')?.focus()
-    })
-    return () => {
-      window.cancelAnimationFrame(frame)
-      document.body.style.overflow = previousOverflow
-      returnFocusRef.current?.focus()
-    }
-  }, [returnFocusRef])
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClose()
-      return
-    }
-    if (event.key !== 'Tab' || !dialogRef.current) return
-    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), [href], select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    )]
-    if (!focusable.length) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-2 sm:p-4"
-      role="presentation"
-      onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}
-    >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`zatca-dialog-${branch.id}`}
-        onKeyDown={handleKeyDown}
-        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[880px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[min(760px,calc(100dvh-2rem))]"
-      >
-        <header className="flex flex-shrink-0 items-center justify-between gap-4 bg-sidebar px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gold-300">{t(branchSummaryKey(branch))}</p>
-            <h2 id={`zatca-dialog-${branch.id}`} className="mt-1 truncate text-base font-black text-white" dir="auto">
-              {branch.name || t('fields.branch')}
-            </h2>
-          </div>
-          <button type="button" onClick={onClose} aria-label={t('guide.close')}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300">
-            <X size={18} />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#fffdf7] p-4 sm:p-6">
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="border-t border-gray-100 bg-white p-5 space-y-5">
           {phase < 2 ? (
             <div className="space-y-4">
-              <div className="flex items-start gap-3 rounded-2xl border border-primary-100 bg-primary-50 p-4">
-                <Info size={14} className="mt-0.5 flex-shrink-0 text-primary-600" />
+              <div className="flex items-start gap-3 bg-primary-50 border border-primary-100 rounded-2xl p-4">
+                <Info size={14} className="text-primary-600 mt-0.5 flex-shrink-0" />
                 <div className="space-y-1.5">
                   <p className="text-xs font-semibold text-primary-900">{t('phase.notYet')}</p>
-                  <p className="text-[11px] leading-relaxed text-primary-800">{t('phase.upgradeHelp')}</p>
+                  <p className="text-[11px] text-primary-800 leading-relaxed">
+                    {t('phase.upgradeHelp')}
+                  </p>
                 </div>
               </div>
               <button
@@ -1587,22 +1086,31 @@ function ZatcaBranchModal({
                   const el = document.querySelector('[data-tab="subscription"]') as HTMLElement | null
                   el?.click()
                 }}
-                className="w-full rounded-xl border border-primary-200 py-2.5 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-50"
+                className="w-full py-2.5 rounded-xl border border-primary-200 text-primary-700 text-sm font-semibold hover:bg-primary-50 transition-colors"
               >
                 {t('phase.upgrade')}
               </button>
             </div>
           ) : (
-            <ProductionOnboardingPanel
-              branch={branch}
-              initialStatus={branch.productionStatus}
-              onStatusChange={handleProductionStatusChange}
-            />
+            <div className="rounded-2xl border border-gray-100 p-4">
+              {isSandbox ? (
+                <SandboxOnboardingPanel
+                  branch={bc}
+                  initialStatus={bc.sandboxStatus}
+                  onStatusChange={status => onSandboxStatusUpdate(bc.id, status)}
+                />
+              ) : (
+                <ProductionOnboardingPanel
+                  branch={bc}
+                  initialStatus={bc.productionStatus}
+                  onStatusChange={handleProductionStatusChange}
+                />
+              )}
+            </div>
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+      )}
+    </div>
   )
 }
 
@@ -1610,18 +1118,14 @@ function ZatcaBranchModal({
 
 export default function ZatcaTab() {
   const { t } = useTranslation('zatca')
-  const { profile, tenant } = useAuth()
+  const { profile } = useAuth()
   const [data, setData]         = useState<BranchWithCert[]>([])
   const [loading, setLoading]   = useState(true)
-  const [sandboxStatuses, setSandboxStatuses] = useState<Record<string, SandboxDemoConnectionStatus | null>>({})
-  const [tradingSandboxOnboardingStatus, setTradingSandboxOnboardingStatus] = useState<SandboxOnboardingStatus | null>(null)
-  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
-  const modalTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showGuide, setShowGuide]   = useState(false)
-  const [showServiceSandboxStart, setShowServiceSandboxStart] = useState(false)
 
   const load = useCallback(async () => {
-    if (!profile?.tenant_id || !tenant) return
+    if (!profile?.tenant_id) return
     setLoading(true)
     const tid = profile.tenant_id
     const branchesRes = await (supabase as any).from('branches').select('*').eq('tenant_id', tid)
@@ -1629,10 +1133,17 @@ export default function ZatcaTab() {
       .order('created_at', { ascending: true })
     const branches = (branchesRes.data as Branch[]) ?? []
     const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
-    if (profile.role === 'owner' && tenant.is_demo !== true) {
+    const sandboxStatuses = new Map<string, SandboxOnboardingResponse | null>()
+    const connectionStates = new Map<string, ZatcaConnectionResolution | null>()
+    if (profile.role === 'owner') {
       await Promise.all(branches
         .filter(branch => (branch.zatca_phase ?? 1) === 2)
         .map(async branch => {
+          try { connectionStates.set(branch.id, await getZatcaConnectionState(branch.id)) } catch { connectionStates.set(branch.id, null) }
+          if (branch.zatca_environment === 'sandbox') {
+            try { sandboxStatuses.set(branch.id, await getSandboxOnboardingStatus(branch.id, tid)) } catch { sandboxStatuses.set(branch.id, null) }
+            return
+          }
           const cached = readCachedProductionStatus(branch.id)
           if (cached) productionStatuses.set(branch.id, cached)
           try {
@@ -1645,27 +1156,15 @@ export default function ZatcaTab() {
     setData(branches.map(b => ({
       ...b,
       productionStatus: productionStatuses.has(b.id) ? productionStatuses.get(b.id) ?? null : undefined,
+      sandboxStatus: sandboxStatuses.has(b.id) ? sandboxStatuses.get(b.id) ?? null : undefined,
+      connectionState: connectionStates.has(b.id) ? connectionStates.get(b.id) ?? null : undefined,
     })))
+    // Auto-expand first branch if only one
+    setExpandedId(prev => branches.length === 1 && !prev ? branches[0].id : prev)
     setLoading(false)
-  }, [profile?.tenant_id, profile?.role, tenant])
+  }, [profile?.tenant_id, profile?.role])
 
   useEffect(() => { load() }, [load])
-
-  const isPermanentDemo = tenant?.is_demo === true
-
-  const isPermanentDemoOwner = isPermanentDemo && ['owner', 'super_admin'].includes(profile?.role ?? '')
-  const sandboxOnboardingBranches: BranchWithCert[] = []
-  const canShowTradingSandboxDebug = false
-
-  const tradingSandboxV2Panel = null
-
-  /*
-   * These temporary controls are visible only in development/Preview for the
-   * exact permanent-demo tenant and Trading branch. The Edge Functions repeat
-   * the same authorization and scope checks; this client condition is only a
-   * visibility gate and is false in ordinary production builds.
-   */
-  const reconnectPanel = null
 
   const handleProductionStatusUpdate = useCallback((branchId: string, status: ProductionOnboardingResponse) => {
     writeCachedProductionStatus(branchId, status)
@@ -1676,23 +1175,20 @@ export default function ZatcaTab() {
     )))
   }, [])
 
-  const openBranchModal = useCallback((branchId: string, trigger: HTMLButtonElement) => {
-    modalTriggerRef.current = trigger
-    setSelectedBranchId(branchId)
+  const handleSandboxStatusUpdate = useCallback((branchId: string, status: SandboxOnboardingResponse) => {
+    setData(prev => prev.map(branch => branch.id === branchId ? { ...branch, sandboxStatus: status } : branch))
   }, [])
-  const closeBranchModal = useCallback(() => setSelectedBranchId(null), [])
-  const selectedBranch = useMemo(
-    () => selectedBranchId ? data.find(branch => branch.id === selectedBranchId) ?? null : null,
-    [data, selectedBranchId],
-  )
+
+  const handleToggle = (branchId: string) => {
+    setExpandedId(prev => prev === branchId ? null : branchId)
+  }
 
   const phase2Count = data.filter(b => (b.zatca_phase ?? 1) === 2).length
   const activeCount = data.filter(b =>
-    b.productionStatus?.onboardingStatus === 'production_connected'
+    b.zatca_environment === 'sandbox'
+      ? b.connectionState?.connection_state === 'connected'
+      : b.productionStatus?.onboardingStatus === 'production_connected'
   ).length
-  const tradingSandboxStatus = sandboxStatuses[TRADING_BRANCH_ID]
-  const serviceSandboxStatus = sandboxStatuses[SERVICE_BRANCH_ID]
-  const activeBranches = data.filter(branch => branch.is_active)
 
   return (
     <div className="space-y-5">
@@ -1703,111 +1199,25 @@ export default function ZatcaTab() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-base font-black text-gray-950">{t('connections')}</h3>
-          <p className="text-xs text-gray-500 mt-1">{t('subtitle')}</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-            {isPermanentDemo ? <span className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-sky-800">Developer Portal Integration Sandbox · {activeBranches.length} active branches</span> : <>
-              <span className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-600">{t('summary.counts', { count: data.length, phase2: phase2Count, active: activeCount })}</span>
-              <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-emerald-700">{t('status.connected')}: {activeCount}</span>
-              <span className="rounded-lg bg-gold-50 px-2.5 py-1.5 text-gold-800">{t('status.ready')}: {Math.max(phase2Count - activeCount, 0)}</span>
-            </>}
-          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {t('summary.counts', { count: data.length, phase2: phase2Count, active: activeCount })}
+          </p>
         </div>
-        {!isPermanentDemo && <button
+        <button
           onClick={() => setShowGuide(true)}
           className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
           title={t('guide.button')}
         >
           <Info size={13} />
           {t('guide.short')}
-        </button>}
+        </button>
         </div>
       </div>
 
-      {false && isPermanentDemoOwner && (
-        <section className="overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-card">
-          <div className="flex items-start gap-3 border-b border-sky-100 bg-sky-50/70 px-5 py-4">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-              <ShieldCheck size={18} />
-            </div>
-            <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-black text-gray-950">{t('sandbox.tradingTitle')}</h3>
-              <Badge variant={tradingSandboxStatus?.active ? 'success' : 'neutral'} dot>
-                {tradingSandboxStatus?.active
-                  ? t('status.active')
-                  : tradingSandboxOnboardingStatus?.status
-                    ? t(`sandbox.onboardingStatus.${tradingSandboxOnboardingStatus.status}`, { defaultValue: tradingSandboxOnboardingStatus.status })
-                    : tradingSandboxStatus
-                      ? t('status.notConnected')
-                      : t('status.checking')}
-              </Badge>
-              </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-                {t('sandbox.demoHelp')}
-              </p>
-            </div>
-          </div>
-          <div className="grid gap-2 p-5 sm:grid-cols-2">
-            <InfoRow label={t('fields.environment')} value={t('sandbox.zatcaSandbox')} />
-            <InfoRow label={t('sandbox.connection')} value={tradingSandboxStatus ? t(tradingSandboxStatus.active ? 'status.active' : 'status.notActive') : t('status.checking')} />
-            <InfoRow label={t('sandbox.complianceChecks')} value={tradingSandboxStatus?.complianceChecks ?? t('status.checking')} />
-            <InfoRow label={t('sandbox.productionSubmission')} value={t('status.disabled')} />
-          </div>
-        </section>
-      )}
+      {/* Official seller readiness */}
+      {ENABLE_OFFICIAL_SELLER_IDENTITY && data.map(branch => <ComplianceReadinessCard key={`identity-${branch.id}`} branchId={branch.id} manage={profile?.role === 'owner'} />)}
 
-      {false && isPermanentDemo && profile?.role === 'owner' && data.some(branch => branch.id === SERVICE_BRANCH_ID) && (
-        <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
-          <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gray-100 text-gray-500">
-                <Building2 size={17} />
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-black text-gray-950">{t('sandbox.serviceTitle')}</h3>
-                  <Badge variant={serviceSandboxStatus?.active ? 'success' : 'neutral'} dot>
-                    {t(serviceSandboxStatus?.active ? 'status.active' : 'status.notConnected')}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-[11px] text-gray-500">{t('sandbox.environmentLine')}</p>
-              </div>
-            </div>
-            {!serviceSandboxStatus?.active && <button
-              type="button"
-              onClick={() => setShowServiceSandboxStart(value => !value)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 transition-colors hover:bg-sky-100 active:scale-[0.98]"
-            >
-              <Wifi size={13} /> {t('sandbox.beginOnboarding')}
-            </button>}
-          </div>
-          {serviceSandboxStatus?.active ? (
-            <div className="grid gap-2 border-t border-gray-100 p-5 sm:grid-cols-2">
-              <InfoRow label={t('fields.environment')} value={t('sandbox.zatcaSandbox')} />
-              <InfoRow label={t('sandbox.connection')} value={t(serviceSandboxStatus.active ? 'status.active' : 'status.notActive')} />
-              <InfoRow label={t('sandbox.complianceChecks')} value={serviceSandboxStatus.complianceChecks} />
-              <InfoRow label={t('sandbox.productionSubmission')} value={t('status.disabled')} />
-            </div>
-          ) : showServiceSandboxStart && (
-            <div className="border-t border-gray-100 bg-gray-50/70 px-5 py-4">
-              <p className="text-xs font-semibold text-gray-800">{t('sandbox.secureOtp')}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-                {t('sandbox.secureOtpHelp')}
-              </p>
-              <a
-                href={FATOORA_PORTAL_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 hover:text-sky-800"
-              >
-                <ExternalLink size={12} /> {t('sandbox.openDeveloperPortal')}
-              </a>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* One authoritative ZATCA card per active branch. */}
+      {/* Branch list */}
       {loading ? (
         <div className="space-y-2">
           {[1, 2].map(i => <div key={i} className="card h-14 animate-pulse bg-gray-50" />)}
@@ -1820,10 +1230,15 @@ export default function ZatcaTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {activeBranches.map(branch => (
-            isPermanentDemo
-              ? <SandboxBranchOnboardingPanel key={branch.id} branch={branch} />
-              : <ProductionBranchOnboardingCard key={branch.id} branch={branch} onStatusChange={handleProductionStatusUpdate} />
+          {data.map(bc => (
+            <BranchAccordionRow
+              key={bc.id}
+              bc={bc}
+              isExpanded={expandedId === bc.id}
+              onToggle={() => handleToggle(bc.id)}
+              onProductionStatusUpdate={handleProductionStatusUpdate}
+              onSandboxStatusUpdate={handleSandboxStatusUpdate}
+            />
           ))}
         </div>
       )}
@@ -1841,8 +1256,8 @@ export default function ZatcaTab() {
       )}
 
       {/* Security note */}
-      <div className="flex items-start gap-2.5 px-1 py-2">
-        <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
+      <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3.5 shadow-card">
+        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
           <Lock size={14} />
         </div>
         <div>

@@ -71,7 +71,7 @@ type BranchForm = {
   zatca_phase: 1 | 2
   is_active: boolean
   is_main_branch: boolean
-  // branch login (new branches only)
+  // branch login
   login_username: string
   login_password: string
   login_confirm_password: string
@@ -359,6 +359,7 @@ function BranchModal({
 
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
+  const needsBranchLoginProvisioning = !isNew && branch !== null && !branchLoginCredential(branch)
   const [activeTab, setActiveTab] = useState<BranchModalTab>('general')
   const [showAllErrors, setShowAllErrors] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
@@ -406,7 +407,9 @@ function BranchModal({
   const CR_RE     = /^[a-zA-Z0-9]+$/
   const BLDG_RE   = /^\d{4}$/
   const POSTAL_RE = /^\d{5}$/
-  const usernameValidation = isNew ? validateBranchUsernameInput(form.login_username) : null
+  const usernameValidation = (isNew || needsBranchLoginProvisioning)
+    ? validateBranchUsernameInput(form.login_username)
+    : null
   const localizedUsernameValidation = !usernameValidation
     ? null
     : /required/i.test(usernameValidation)
@@ -423,6 +426,13 @@ function BranchModal({
   )
   const touch = (k: string) => setTouched(prev => { const s = new Set(prev); s.add(k); return s })
 
+  const loginCredentialErrors: Record<string, string | null> = {
+    login_username:         localizedUsernameValidation,
+    login_password:         !form.login_password ? t('branches:validation.passwordRequired')
+                            : form.login_password.length < 8 ? t('branches:editor.passwordTooShort') : null,
+    login_confirm_password: !form.login_confirm_password ? t('branches:validation.confirmPassword')
+                            : form.login_confirm_password !== form.login_password ? t('branches:editor.passwordMismatch') : null,
+  }
   const errs: Record<string, string | null> = {
     name:            !form.name.trim() ? t('branches:validation.required') : null,
     vat_number:      !form.vat_number.trim() ? t('branches:validation.required') : !VAT_RE.test(form.vat_number.trim()) ? t('branches:validation.vat') : null,
@@ -435,16 +445,13 @@ function BranchModal({
     ...(isNew && canEditBillingConfig ? {
       business_profile: !form.business_profile ? t('branches:validation.businessProfileRequired') : null,
     } : {}),
-    ...(isNew ? {
-      login_username:         localizedUsernameValidation,
-      login_password:         !form.login_password ? t('branches:validation.passwordRequired')
-                              : form.login_password.length < 8 ? t('branches:editor.passwordTooShort') : null,
-      login_confirm_password: !form.login_confirm_password ? t('branches:validation.confirmPassword')
-                              : form.login_confirm_password !== form.login_password ? t('branches:editor.passwordMismatch') : null,
-    } : {}),
+    ...(isNew ? loginCredentialErrors : {}),
   }
   const hasErrors = Object.values(errs).some(Boolean)
   const fieldErr  = (k: string) => (showAllErrors || touched.has(k) ? errs[k] : null)
+  const loginFieldErr = (k: keyof typeof loginCredentialErrors) => (
+    touched.has(k) ? loginCredentialErrors[k] : null
+  )
   const generalError = ['name', 'vat_number', 'cr_number', 'building_number', 'postal_code', 'street', 'city', 'district']
     .some(key => Boolean(errs[key]))
   const accessError = isNew && ['login_username', 'login_password', 'login_confirm_password']
@@ -568,6 +575,70 @@ function BranchModal({
         ...branchModuleSettingsErrorDebug(error),
       })
       throw new Error(branchModuleSettingsErrorMessage(error, t))
+    }
+  }
+
+  const handleProvisionExistingBranchLogin = async () => {
+    if (!branch || !needsBranchLoginProvisioning) return
+
+    setError('')
+    setTouched(prev => {
+      const next = new Set(prev)
+      next.add('login_username')
+      next.add('login_password')
+      next.add('login_confirm_password')
+      return next
+    })
+    if (Object.values(loginCredentialErrors).some(Boolean)) return
+
+    setSaving(true)
+    try {
+      // The canonical function checks global username availability before it
+      // creates an Auth identity. This action uses the existing branch only.
+      const normalizedUsername = normalizeBranchUsernameInput(form.login_username)
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-branch-user', {
+        body: {
+          username: normalizedUsername,
+          password: form.login_password,
+          full_name: branch.name.trim(),
+          tenant_id: tenantId,
+          branch_id: branch.id,
+        },
+      })
+      const fnErrMsg = fnErr?.message ?? (fnData as any)?.error ?? null
+      if (fnErrMsg) {
+        if (/username is already taken/i.test(fnErrMsg)) {
+          // A retry after a lost success response is successful only when the
+          // same active username is already mapped to this exact branch.
+          const { data: existingMapping, error: mappingErr } = await supabase
+            .from('branch_login_usernames')
+            .select('id')
+            .eq('tenant_id', tenantId)
+            .eq('branch_id', branch.id)
+            .eq('normalized_username', normalizedUsername)
+            .eq('is_active', true)
+            .maybeSingle()
+
+          if (!mappingErr && existingMapping) {
+            onSaved()
+            return
+          }
+        }
+        console.error('Branch login provisioning failed', fnErrMsg)
+        setError(
+          /username is already taken/i.test(fnErrMsg)
+            ? t('branches:errors.usernameTaken')
+            : t('branches:errors.loginProvisionFailed'),
+        )
+        return
+      }
+
+      onSaved()
+    } catch (err: any) {
+      console.error('Failed to provision branch login', err)
+      setError(t('branches:errors.loginProvisionFailed'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1314,7 +1385,7 @@ function BranchModal({
           </section>
           )}
 
-          {/* ── BRANCH LOGIN (existing branch — read-only + reset) ─ */}
+          {/* ── BRANCH LOGIN (existing branch — reset or provision) ─ */}
           {activeTab === 'access' && (
           <section id="branch-panel-access" role="tabpanel" aria-labelledby="branch-tab-access" className="space-y-3">
           {!isNew && (
@@ -1347,10 +1418,65 @@ function BranchModal({
                     </button>
                   </>
                 ) : (
-                  <div className="flex items-start gap-2 text-xs text-gray-400">
-                    <LogIn size={14} className="flex-shrink-0 mt-0.5" />
-                    <p>{t('branches:editor.usernameNotSetBranch')}</p>
-                  </div>
+                  <>
+                    <div className="flex items-start gap-2 text-xs text-gray-400">
+                      <LogIn size={14} className="flex-shrink-0 mt-0.5" />
+                      <p>{t('branches:editor.usernameNotSetBranch')}</p>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {t('branches:editor.provisionLoginHelp')}
+                    </p>
+                    <div onBlur={() => touch('login_username')}>
+                      <Input
+                        label={t('branches:editor.branchUsername')}
+                        icon={LogIn}
+                        type="text"
+                        value={form.login_username}
+                        onChange={e => set('login_username')(normalizeBranchUsernameInput(e.target.value))}
+                        onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
+                        placeholder={t('branches:editor.usernamePlaceholder')}
+                        helperText={t('branches:editor.usernameFormatHelp')}
+                        error={loginFieldErr('login_username') ?? undefined}
+                        autoComplete="username"
+                      />
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div onBlur={() => touch('login_password')}>
+                        <Input
+                          label={t('branches:editor.password')}
+                          icon={KeyRound}
+                          type="password"
+                          value={form.login_password}
+                          onChange={e => set('login_password')(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
+                          placeholder={t('branches:editor.passwordPlaceholder')}
+                          error={loginFieldErr('login_password') ?? undefined}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                      <div onBlur={() => touch('login_confirm_password')}>
+                        <Input
+                          label={t('branches:editor.confirmPassword')}
+                          icon={KeyRound}
+                          type="password"
+                          value={form.login_confirm_password}
+                          onChange={e => set('login_confirm_password')(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
+                          placeholder={t('branches:editor.repeatPassword')}
+                          error={loginFieldErr('login_confirm_password') ?? undefined}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      loading={saving}
+                      disabled={saving}
+                      onClick={handleProvisionExistingBranchLogin}
+                    >
+                      <KeyRound size={14} /> {t('branches:editor.provisionLogin')}
+                    </Button>
+                  </>
                 )}
               </div>
             </div>

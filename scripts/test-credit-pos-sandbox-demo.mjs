@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const migration = read('supabase/migrations/20260803000600_credit_preflight_and_server_demo_modes.sql')
 const rebind = read('supabase/migrations/20260803000700_rebind_credit_and_sandbox_mode_contracts.sql')
+const sandboxClearanceGate = read('supabase/migrations/20260824000100_sandbox_standard_clearance_gate.sql')
 const pos = read('src/pages/pos/POSPage.tsx')
 const receivables = read('src/lib/customers/receivables.ts')
 const submission = read('src/lib/zatca/submission.ts')
@@ -37,8 +38,12 @@ assert.doesNotMatch(
   /encrypted_production_(?:csid|secret)/,
   'mode selection must not use production credential material',
 )
-assert.match(migration, /'checkoutPath', 'sandbox'/)
-assert.match(migration, /SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/)
+assert.match(sandboxClearanceGate, /'checkoutPath', 'sandbox'/)
+assert.match(sandboxClearanceGate, /c\.status = 'active'/)
+assert.match(sandboxClearanceGate, /c\.onboarding_status = 'active'/)
+assert.match(sandboxClearanceGate, /c\.functionality_map = '1100'/)
+assert.doesNotMatch(sandboxClearanceGate, /c\.compliance_demo_status/)
+assert.doesNotMatch(sandboxClearanceGate, /SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/)
 assert.match(rebind, /Explicitly bind the public checkout contract to the server-derived mode[\s\S]*?classifier/)
 assert.match(rebind, /CREATE OR REPLACE FUNCTION public\.pos_checkout\(p_payload jsonb\)/)
 assert.match(rebind, /v_result := public\.pos_checkout_capability_base_v1\(p_payload - 'is_demo' - 'non_fiscal'\)/)
@@ -63,11 +68,12 @@ assert.match(pos, /grid-cols-3/)
 assert.match(pos, /documentDecision\.checkoutPath === 'sandbox'/)
 assert.match(pos, /else if \(sandboxDemo\)[\s\S]*?submitInvoiceForBranch/s)
 assert.match(pos, /sandboxDemo,/)
-assert.match(pos, /if \(receipt\.sandboxDemo\)[\s\S]*?routed\.mode !== 'sandbox_validation'/s)
+assert.match(pos, /if \(receipt\.sandboxDemo\)[\s\S]*?routed\.mode !== 'sandbox_submission'/s)
+assert.match(pos, /if \(receipt\.sandboxDemo\)[\s\S]*?getInvoiceZatcaOutputState/s)
 
 assert.match(submission, /PosCheckoutPath = 'atomic' \| 'legacy' \| 'demo' \| 'sandbox'/)
-assert.match(submission, /getZatcaDemoCheckoutMode/)
-assert.match(submission, /await getZatcaDemoCheckoutMode\(params\.branchId\) === 'sandbox_compliance'/)
+assert.match(submission, /const connection = await getZatcaConnectionState\(params\.branchId\)/)
+assert.match(submission, /supabase\.functions\.invoke\('zatca-submit-sandbox-demo'/)
 assert.match(sandboxValidator, /\.in\('status', \['compliance', 'active'\]\)/)
 
 for (const locale of [enPayments, arPayments]) {

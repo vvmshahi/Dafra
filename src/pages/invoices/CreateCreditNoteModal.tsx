@@ -961,9 +961,7 @@ export default function CreateCreditNoteModal({
               documentKind: invoice.zatca_document_kind,
             },
           })
-          autoSubmitSucceeded = routed.mode === 'sandbox_validation'
-            ? routed.result.status === 'sandbox_validated' || routed.result.status === 'sandbox_validated_with_warnings'
-            : routed.result.ok
+          autoSubmitSucceeded = routed.result.ok
           if (routed.mode === 'production_submission') {
             const submission = routed.result
             outputState = {
@@ -983,12 +981,17 @@ export default function CreateCreditNoteModal({
           } else {
             outputState = {
               ...outputState,
-              invoiceStatus: routed.result.status,
-              finalizationStatus: routed.result.status,
-              reportingDisplayState: routed.result.status,
-              canPrint: autoSubmitSucceeded
-                && invoice.zatca_document_kind === 'simplified',
-              retryAvailable: !autoSubmitSucceeded,
+              documentKind: routed.result.documentKind ?? invoice.zatca_document_kind,
+              invoiceStatus: routed.result.invoiceStatus,
+              finalizationStatus: routed.result.finalizationStatus,
+              artifactStage: routed.result.artifactStage,
+              reportingDisplayState: defaultReportingDisplayState(
+                routed.result.documentKind ?? invoice.zatca_document_kind,
+                routed.result.invoiceStatus,
+                routed.result.finalizationStatus,
+              ),
+              canPrint: routed.result.canPrint,
+              retryAvailable: routed.result.retryable,
             }
           }
         } catch {

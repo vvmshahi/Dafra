@@ -9,15 +9,17 @@ const branchDashboard = read('src/pages/branch/BranchDashboardPage.tsx')
 const en = JSON.parse(read('src/localization/locales/en/dashboard.json'))
 const ar = JSON.parse(read('src/localization/locales/ar-SA/dashboard.json'))
 
-assert.match(tab, /const \{ profile, tenant \} = useAuth\(\)/)
-assert.match(tab, /const isPermanentDemo = tenant\?\.is_demo === true/)
-assert.match(tab, /tenant\.is_demo !== true/)
-assert.match(tab, /const activeBranches = data\.filter\(branch => branch\.is_active\)/)
-assert.match(tab, /isPermanentDemo\s*\? <SandboxBranchOnboardingPanel key=\{branch\.id\} branch=\{branch\}/)
-assert.match(tab, /: <ProductionBranchOnboardingCard key=\{branch\.id\} branch=\{branch\}/)
-assert.doesNotMatch(tab, /\{tradingSandboxV2Panel\}|\{reconnectPanel\}|ComplianceReadinessCard key=/)
-assert.match(tab, /const tradingSandboxV2Panel = null/)
-assert.match(tab, /const reconnectPanel = null/)
+// The settings view owns a single, branch-scoped canonical route. It must select
+// the Sandbox flow from the branch environment, not from a fixed tenant/branch UUID.
+assert.match(tab, /const \{ profile \} = useAuth\(\)/)
+assert.match(tab, /branch\.zatca_environment === 'sandbox'/)
+assert.match(tab, /<SandboxOnboardingPanel/)
+assert.match(tab, /<ProductionOnboardingPanel/)
+assert.match(tab, /getSandboxOnboardingStatus\(branch\.id, tid\)/)
+assert.doesNotMatch(tab, /zatca-onboard-trading-sandbox-v2/)
+assert.doesNotMatch(tab, /PERMANENT_DEMO_(TENANT|TRADING|SERVICE)_BRANCH_ID/)
+assert.doesNotMatch(tab, /14271653-b404-44bf-9f39-7e9927569c02/)
+assert.doesNotMatch(tab, /f512b805-b0ef-494d-b696-139e31a9fabb/)
 
 assert.match(sandboxCard, /data-zatca-branch-card=\{branch\.id\}/)
 assert.match(sandboxCard, /getSandboxBranchOnboardingStatus\(branch\.id, branch\.tenant_id\)/)
@@ -30,7 +32,7 @@ assert.match(sandboxCard, /complianceSampleResults/)
 
 for (const dashboard of [ownerDashboard, branchDashboard]) {
   assert.match(dashboard, /getZatcaConnectionState/)
-  assert.match(dashboard, /tenant\?\.is_demo === true/)
+  assert.match(dashboard, /zatcaConnection\?\.environment === 'sandbox'/)
   assert.match(dashboard, /zatca\.sandboxConnected/)
   assert.match(dashboard, /zatca\.sandboxPending/)
 }

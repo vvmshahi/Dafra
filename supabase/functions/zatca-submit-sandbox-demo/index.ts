@@ -19,6 +19,16 @@ import { create as xmlCreate } from 'https://esm.sh/xmlbuilder2@4.0.3'
 import { secp256k1 } from 'https://esm.sh/@noble/curves@2.2.0/secp256k1.js'
 import { extractEcPrivateKeyScalar, signZatcaInvoiceHash } from '../_shared/zatca/signing_core.mjs'
 import { buildZatcaPhase2Qr } from '../_shared/zatca/phase2_qr.mjs'
+import {
+  callerCanSubmitForTarget,
+  sandboxCredentialAllowsDocument,
+  sandboxScopeAllowsSubmission,
+} from '../_shared/zatca/sandbox_submission_auth.mjs'
+import { isUnpersistedSandboxReservation } from '../_shared/zatca/sandbox_reservation_recovery.mjs'
+import {
+  assessSandboxComplianceBinding,
+  assessSandboxOperationalCertificate,
+} from '../_shared/zatca/sandbox_credential_binding.mjs'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -35,8 +45,17 @@ const FIRST_INVOICE_HASH =
 
 interface SubmissionCredentials {
   privateKey: Uint8Array
+  signingCertificate: string
   sandboxCsid: string
   sandboxSecret: string
+}
+
+function assertSandboxSigningCertificateBinding(binding: ReturnType<typeof assessSandboxComplianceBinding>): void {
+  if (
+    !binding.privateKeyEqualsCsr ||
+    !binding.privateKeyEqualsSigningCertificate ||
+    !binding.csrEqualsSigningCertificate
+  ) throw new Error('Sandbox Compliance signing certificate does not match the generated private key and CSR')
 }
 
 interface SubmitDiagnostics {
@@ -83,7 +102,12 @@ interface AuthorizedTarget {
   branchId: string
 }
 
-const TENANT_SUBMIT_ROLES = new Set(['owner', 'admin'])
+class SandboxSubmissionForbiddenError extends Error {
+  constructor() {
+    super('Forbidden')
+    this.name = 'SandboxSubmissionForbiddenError'
+  }
+}
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -92,41 +116,15 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   })
 }
 
-function requireServiceRole(req: Request): void {
+function bearerToken(req: Request): string {
   const authorization = req.headers.get('Authorization') ?? ''
   const match = authorization.match(/^Bearer\s+([^\s]+)$/i)
   if (!match) throw new Error('Unauthorized')
-
-  try {
-    const segments = match[1].split('.')
-    if (segments.length !== 3) throw new Error('Malformed JWT')
-
-    const base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-    const claims = JSON.parse(atob(padded)) as { role?: unknown }
-    if (claims.role !== 'service_role') throw new Error('Invalid role')
-  } catch {
-    throw new Error('Unauthorized')
-  }
+  return match[1]
 }
 
 function canSubmitForTarget(caller: CallerProfile, target: AuthorizedTarget): boolean {
-  const role = caller.role
-  if (!caller.tenant_id) return false
-
-  if (TENANT_SUBMIT_ROLES.has(role)) {
-    return target.tenantId === caller.tenant_id
-  }
-
-  if (role === 'branch') {
-    return (
-      target.tenantId === caller.tenant_id &&
-      !!caller.branch_id &&
-      target.branchId === caller.branch_id
-    )
-  }
-
-  return false
+  return callerCanSubmitForTarget(caller, target)
 }
 
 function logSubmitAuthorization(params: {
@@ -544,7 +542,7 @@ function buildInvoice(data: any, opts: any): string {
   for (const line of data.lines) {
     const il = root.ele(NS.cac, 'InvoiceLine')
     il.ele(NS.cbc, 'ID').txt(String(line.id))
-    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', line.unitCode ?? 'PCE').txt(String(line.qty))
+    il.ele(NS.cbc, 'InvoicedQuantity').att('unitCode', 'PCE').txt(String(line.qty))
     il.ele(NS.cbc, 'LineExtensionAmount').att('currencyID', 'SAR').txt(fmt(line.lineNetAmt))
     if (line.discountAmt > 0) {
       const allow = il.ele(NS.cac, 'AllowanceCharge')
@@ -563,7 +561,7 @@ function buildInvoice(data: any, opts: any): string {
     itemTax.ele(NS.cac, 'TaxScheme').ele(NS.cbc, 'ID').txt('VAT')
     const price = il.ele(NS.cac, 'Price')
     price.ele(NS.cbc, 'PriceAmount').att('currencyID', 'SAR').txt(fmt(line.qty > 0 ? line.lineNetAmt / line.qty : 0))
-    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', line.unitCode ?? 'PCE').txt('1')
+    price.ele(NS.cbc, 'BaseQuantity').att('unitCode', 'PCE').txt('1')
   }
 
   return root.end({ prettyPrint: false }) as string
@@ -608,7 +606,7 @@ function buildInvoiceXMLData(
       countryCode: branch.country || 'SA',
     },
     buyer: !isSimplified && customer
-      ? { name: customer.name, vatNumber: customer.vat_number ?? undefined }
+      ? { name: customer.business_name ?? customer.company_name ?? customer.name, vatNumber: customer.vat_number ?? undefined }
       : undefined,
     subtotal:      inv.subtotal,
     discountTotal: inv.discount_amount,
@@ -617,9 +615,6 @@ function buildInvoiceXMLData(
     totalAmount:   inv.total_amount,
     lines: items.map((it: any, i: number) => ({
       id: i + 1, name: it.name, qty: it.quantity, unitPrice: it.unit_price,
-      unitCode: /^[A-Z0-9]{2,8}$/.test(String(it.selling_unit_code ?? '').trim().toUpperCase())
-        ? String(it.selling_unit_code).trim().toUpperCase()
-        : 'PCE',
       discountAmt: it.discount_amount, lineNetAmt: it.subtotal,
       taxRate: it.tax_rate, taxAmount: it.tax_amount, lineTotal: it.total,
     })),
@@ -989,21 +984,55 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true
 }
 
-async function loadSubmissionCredentials(db: any, branchId: string, tenantId: string): Promise<SubmissionCredentials & { deviceId: string }> {
+async function loadSubmissionCredentials(
+  db: any,
+  branchId: string,
+  tenantId: string,
+  documentType: string,
+  branchVat: string | null,
+): Promise<SubmissionCredentials & { deviceId: string }> {
   const { data: c, error } = await db.from('zatca_sandbox_credentials')
-    .select('device_id,encrypted_private_key,encrypted_production_csid,encrypted_production_secret')
+    .select('tenant_id,branch_id,device_id,environment,status,onboarding_status,functionality_map,expires_at,csr_pem,encrypted_private_key,compliance_request_id,encrypted_compliance_csid,encrypted_compliance_secret,encrypted_production_csid,encrypted_production_secret,certificate,compliance_sample_results,reconciliation_status,onboarding_operation')
     .eq('tenant_id', tenantId).eq('branch_id', branchId).eq('environment', 'sandbox')
     .eq('status', 'active').or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`).single()
-  if (error || !c?.encrypted_private_key || !c.encrypted_production_csid || !c.encrypted_production_secret) {
-    throw new Error('Sandbox ZATCA credentials are missing or expired.')
+  if (error) {
+    throw new Error('Unable to verify Sandbox credentials.')
+  }
+  if (!c?.csr_pem || !c.encrypted_private_key || !c.compliance_request_id || !c.encrypted_compliance_csid || !c.encrypted_compliance_secret || !c.encrypted_production_csid || !c.encrypted_production_secret || !c.certificate
+    || c.reconciliation_status === 'required' || c.onboarding_operation
+    || !sandboxCredentialAllowsDocument(c, documentType, { tenantId, branchId })) {
+    throw new SandboxSubmissionForbiddenError()
   }
   const secret = Deno.env.get('ZATCA_SERVER_ENCRYPTION_KEY')
   if (!secret) throw new Error('ZATCA_SERVER_ENCRYPTION_KEY is not configured')
+  const [privateKey, complianceCertificate, sandboxCsid, sandboxSecret] = await Promise.all([
+    decryptServerPrivateKey(c.encrypted_private_key, secret),
+    decryptServerEnvelope(c.encrypted_compliance_csid, secret),
+    decryptServerEnvelope(c.encrypted_production_csid, secret),
+    decryptServerEnvelope(c.encrypted_production_secret, secret),
+  ])
+  const complianceBinding = assessSandboxComplianceBinding({
+    privateKey,
+    csrPem: c.csr_pem,
+    complianceCertificate,
+  })
+  const productionBinding = await assessSandboxOperationalCertificate({
+    environment: c.environment,
+    privateKey,
+    csrPem: c.csr_pem,
+    productionCertificate: c.certificate,
+    branchVat,
+  })
+  assertSandboxSigningCertificateBinding(complianceBinding)
+  if (!productionBinding.acceptsSandboxOperationalCredential) {
+    throw new Error('Sandbox operational credential identity binding is invalid')
+  }
   return {
     deviceId: c.device_id,
-    privateKey: await decryptServerPrivateKey(c.encrypted_private_key, secret),
-    sandboxCsid: await decryptServerEnvelope(c.encrypted_production_csid, secret),
-    sandboxSecret: await decryptServerEnvelope(c.encrypted_production_secret, secret),
+    privateKey,
+    signingCertificate: complianceCertificate,
+    sandboxCsid,
+    sandboxSecret,
   }
 }
 
@@ -1042,27 +1071,41 @@ async function rpc(db:any, name:string, args:Record<string,unknown>):Promise<any
   const {data,error}=await db.rpc(name,args); if(error) throw new Error(error.message); return data
 }
 async function processInvoice(db:any, invoiceId:string, tenantId:string, internalRetry:boolean):Promise<any> {
-  const q=await db.from('invoices').select('id,invoice_number,invoice_reference,original_invoice_id,credit_reason,zatca_uuid,zatca_invoice_type,zatca_type_code,created_at,zatca_status,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,branch_id,tenant_id,invoice_items(id,name,quantity,selling_unit_code,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total),customers(name,vat_number)').eq('id',invoiceId).eq('tenant_id',tenantId).single()
+  const q=await db.from('invoices').select('id,invoice_number,invoice_reference,original_invoice_id,credit_reason,zatca_uuid,zatca_invoice_type,zatca_type_code,created_at,zatca_status,subtotal,discount_amount,taxable_amount,tax_amount,total_amount,branch_id,tenant_id,invoice_items(id,name,quantity,unit_price,discount_amount,subtotal,tax_rate,tax_amount,total),customers(name,business_name,company_name,vat_number)').eq('id',invoiceId).eq('tenant_id',tenantId).single()
   const inv=q.data; if(q.error||!inv) throw new Error('Invoice not found')
-  const tq=await db.from('tenants').select('id').eq('id',tenantId).eq('is_demo',true).eq('is_active',true).single()
-  const legacyBranch=await db.from('branches').select('id,tenant_id,compliance_identity_mode,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country,zatca_environment,is_active').eq('id',inv.branch_id).eq('tenant_id',tenantId).eq('zatca_environment','sandbox').eq('is_active',true).single()
-  const protectedMode=legacyBranch.data?.compliance_identity_mode==='protected'
-  const bq=protectedMode
-    ? await db.from('branch_compliance_profiles').select('branch_id,tenant_id,registered_seller_name,registered_seller_name_ar,vat_number,registration_scheme,registration_identifier,building_number,street,district,city,postal_code,country,validation_status').eq('branch_id',inv.branch_id).eq('tenant_id',tenantId).eq('validation_status','verified').single()
-    : {data:legacyBranch.data?{...legacyBranch.data,registered_seller_name:legacyBranch.data.business_name||legacyBranch.data.name,registered_seller_name_ar:legacyBranch.data.business_name_ar,registration_scheme:'CRN',registration_identifier:legacyBranch.data.cr_number}:null,error:legacyBranch.error}
-  if(tq.error||bq.error||!tq.data||!bq.data) throw new Error('Invoice is outside the authorized Sandbox demo scope')
-  if(['reported','cleared'].includes(inv.zatca_status)) return {invoiceStatus:inv.zatca_status}
-  if(inv.zatca_invoice_type==='standard') return {invoiceStatus:'not_submitted',error:'Standard invoice clearance is not supported in the Sandbox demo yet.'}
-  if(inv.zatca_invoice_type==='debit_note') return {invoiceStatus:'not_submitted',error:'Debit notes are not supported in the Sandbox demo.'}
-  if(!['simplified','credit_note'].includes(inv.zatca_invoice_type)) return {invoiceStatus:'not_submitted',error:'Unsupported Sandbox demo document type.'}
+  const [tq, bq] = await Promise.all([
+    db.from('tenants').select('id,is_demo,is_active,suspended_at').eq('id', tenantId).single(),
+    db.from('branches').select('id,tenant_id,name,business_name,business_name_ar,vat_number,cr_number,building_number,street,district,city,postal_code,country,zatca_environment,is_active').eq('id', inv.branch_id).eq('tenant_id', tenantId).single(),
+  ])
+  if (tq.error || bq.error) throw new Error('Unable to verify Sandbox submission scope')
+  const target = { tenantId, branchId: inv.branch_id }
+  if (!sandboxScopeAllowsSubmission({ tenant: tq.data, branch: bq.data, target })) {
+    throw new SandboxSubmissionForbiddenError()
+  }
+  const sellerProfile = {
+    ...bq.data,
+    registered_seller_name: bq.data.business_name || bq.data.name,
+    registered_seller_name_ar: bq.data.business_name_ar,
+    registration_scheme: 'CRN',
+    registration_identifier: bq.data.cr_number,
+  }
+  if(['reported','cleared'].includes(inv.zatca_status)) return {invoiceStatus:inv.zatca_status,documentKind:inv.zatca_invoice_type==='standard'?'standard':'simplified'}
+  if(!['simplified','standard','credit_note','debit_note'].includes(inv.zatca_invoice_type)) return {invoiceStatus:'not_submitted',error:'Unsupported Sandbox demo document type.'}
   let original:any=null
-  if(inv.zatca_invoice_type==='credit_note'){
-    if(!inv.original_invoice_id||inv.zatca_type_code!=='381'||!String(inv.credit_reason??'').trim()) throw new Error('Invalid credit note')
+  const isAdjustment = inv.zatca_invoice_type==='credit_note' || inv.zatca_invoice_type==='debit_note'
+  if(isAdjustment){
+    const expectedTypeCode = inv.zatca_invoice_type==='credit_note' ? '381' : '383'
+    if(!inv.original_invoice_id||inv.zatca_type_code!==expectedTypeCode||!String(inv.credit_reason??'').trim()) throw new Error('Invalid adjustment note')
     const oq=await db.from('invoices').select('id,invoice_number,zatca_invoice_type,zatca_status').eq('id',inv.original_invoice_id).eq('tenant_id',tenantId).eq('branch_id',inv.branch_id).single()
     original=oq.data
-    if(oq.error||!original||original.zatca_invoice_type!=='simplified'||!['reported','cleared'].includes(original.zatca_status)) throw new Error('Credit note must reference a reported simplified invoice')
+    if(oq.error||!original||!['simplified','standard'].includes(original.zatca_invoice_type)||!['reported','cleared'].includes(original.zatca_status)) throw new Error('Adjustment note must reference a reported invoice')
   }
-  const c=await loadSubmissionCredentials(db,inv.branch_id,tenantId)
+  const documentKind = (original?.zatca_invoice_type ?? inv.zatca_invoice_type) === 'standard' ? 'standard' : 'simplified'
+  const isSimplified = documentKind === 'simplified'
+  if(!isSimplified && (!inv.customers || !String(inv.customers.business_name ?? inv.customers.company_name ?? inv.customers.name ?? '').trim() || !/^3\d{13}3$/.test(String(inv.customers.vat_number ?? '')))) {
+    return {invoiceStatus:'not_submitted',documentKind,error:'Standard Sandbox documents require a customer name and valid VAT number.'}
+  }
+  const c=await loadSubmissionCredentials(db,inv.branch_id,tenantId,inv.zatca_invoice_type,bq.data.vat_number)
   const rr=await rpc(db,'reserve_zatca_sandbox_submission',{p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id})
   const r=Array.isArray(rr)?rr[0]:rr
   if(!r) throw new Error('Sandbox reservation failed')
@@ -1084,18 +1127,35 @@ async function processInvoice(db:any, invoiceId:string, tenantId:string, interna
   }
   let signedXml=r.signed_xml, invoiceHash=r.invoice_hash, payload=r.submission_payload, signatureValue=r.signature_value, qrCode=r.qr_code
   if(!payload){
-    const xmlInv={...inv,zatca_uuid:r.invoice_uuid,zatca_counter_number:Number(r.invoice_counter),zatca_prev_invoice_hash:r.previous_invoice_hash}
-    const xmlData=buildInvoiceXMLData(xmlInv,bq.data,inv.invoice_items??[],inv.customers??null,true,original?{billingReferenceId:inv.invoice_reference||original.invoice_number,reason:String(inv.credit_reason).trim()}:undefined)
-    const unsigned=buildInvoice(xmlData,{profileId:'reporting:1.0',typeCodeName:'0200000',invoiceTypeCode:inv.zatca_type_code??'388',includeSignature:true,requireBuyer:false})
-    const signed=await signInvoice(unsigned,c.privateKey,c.sandboxCsid)
-    signedXml=signed.signedXml; invoiceHash=signed.invoiceHash; signatureValue=signed.signatureValue; qrCode=signed.qrCode
-    payload={invoiceHash,uuid:r.invoice_uuid,invoice:btoa(unescape(encodeURIComponent(signedXml)))}
-    await rpc(db,'store_zatca_sandbox_signed_payload',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id,p_invoice_hash:invoiceHash,p_signed_xml:signedXml,p_submission_payload:payload,p_signature_value:signatureValue,p_qr_code:qrCode})
+    try {
+      const xmlInv={...inv,zatca_uuid:r.invoice_uuid,zatca_counter_number:Number(r.invoice_counter),zatca_prev_invoice_hash:r.previous_invoice_hash}
+      const xmlData=buildInvoiceXMLData(xmlInv,sellerProfile,inv.invoice_items??[],inv.customers??null,isSimplified,original?{billingReferenceId:inv.invoice_reference||original.invoice_number,reason:String(inv.credit_reason).trim()}:undefined)
+      // The endpoint selects reporting versus clearance. UBL ProfileID stays
+      // reporting:1.0 for both Sandbox document kinds.
+      const unsigned=buildInvoice(xmlData,{profileId:'reporting:1.0',typeCodeName:isSimplified?'0200000':'0100000',invoiceTypeCode:inv.zatca_type_code??'388',includeSignature:true,requireBuyer:!isSimplified})
+      const signed=await signInvoice(unsigned,c.privateKey,c.signingCertificate)
+      signedXml=signed.signedXml; invoiceHash=signed.invoiceHash; signatureValue=signed.signatureValue; qrCode=signed.qrCode
+      payload={invoiceHash,uuid:r.invoice_uuid,invoice:btoa(unescape(encodeURIComponent(signedXml)))}
+      await rpc(db,'store_zatca_sandbox_signed_payload',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id,p_invoice_hash:invoiceHash,p_signed_xml:signedXml,p_submission_payload:payload,p_signature_value:signatureValue,p_qr_code:qrCode})
+    } catch (error) {
+      if (isUnpersistedSandboxReservation(r)) {
+        await rpc(db,'cancel_zatca_sandbox_before_dispatch',{
+          p_reservation_id:r.reservation_id,
+          p_tenant_id:tenantId,
+          p_branch_id:inv.branch_id,
+          p_device_id:c.deviceId,
+          p_invoice_id:inv.id,
+          p_reason:safeZatcaText(error instanceof Error ? error.message : 'Pre-signing failure', 500) ?? 'Pre-signing failure',
+        })
+      }
+      throw error
+    }
   }
   if(!dispatchAlreadyMarked) await rpc(db,'mark_zatca_sandbox_dispatched',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id})
   let response:Response
   try{
-    response=await fetch(SANDBOX_BASE_URL+'/invoices/reporting/single',{method:'POST',headers:{accept:'application/json','accept-version':'V2','Content-Type':'application/json',Authorization:'Basic '+btoa(c.sandboxCsid+':'+c.sandboxSecret)},body:JSON.stringify(payload)})
+    const endpoint = isSimplified ? '/invoices/reporting/single' : '/invoices/clearance/single'
+    response=await fetch(SANDBOX_BASE_URL+endpoint,{method:'POST',headers:{accept:'application/json','accept-version':'V2','Content-Type':'application/json',Authorization:'Basic '+btoa(c.sandboxCsid+':'+c.sandboxSecret),...(isSimplified?{}:{'Clearance-Status':'1'})},body:JSON.stringify(payload)})
   }catch(error){
     await rpc(db,'mark_zatca_sandbox_ambiguous',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id,p_reason:safeZatcaText(error instanceof Error?error.message:'uncertain outcome',500)})
     return {invoiceStatus:'pending',reservationState:'ambiguous'}
@@ -1109,35 +1169,80 @@ async function processInvoice(db:any, invoiceId:string, tenantId:string, interna
   }
   let body:any={}
   try{body=responseText?JSON.parse(responseText):{}}catch{body={httpStatus:response.status}}
-  const accepted=response.ok&&body?.reportingStatus==='REPORTED'&&zatcaMessageCodes(body,'error').length===0
+  const accepted=response.ok&&(isSimplified?body?.reportingStatus==='REPORTED':body?.clearanceStatus==='CLEARED')&&zatcaMessageCodes(body,'error').length===0
   const definitive=accepted||(response.status>=400&&response.status<500)
   if(!definitive){
     await rpc(db,'mark_zatca_sandbox_ambiguous',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id,p_reason:'Non-definitive HTTP '+response.status})
     return {invoiceStatus:'pending',reservationState:'ambiguous'}
   }
-  const final=await rpc(db,'finalize_zatca_sandbox_submission',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id,p_outcome:accepted?'accepted':'rejected',p_http_status:response.status,p_response_body:body})
-  return {invoiceStatus:final?.invoice_status??(accepted?'reported':'failed')}
+  const final=await rpc(db,'finalize_zatca_sandbox_submission_v2',{p_reservation_id:r.reservation_id,p_tenant_id:tenantId,p_branch_id:inv.branch_id,p_device_id:c.deviceId,p_invoice_id:inv.id,p_document_kind:documentKind,p_outcome:accepted?'accepted':'rejected',p_http_status:response.status,p_response_body:body})
+  return {invoiceStatus:final?.invoice_status??(accepted?(isSimplified?'reported':'cleared'):'failed'),documentKind,finalizationStatus:accepted?'sandbox_accepted':'sandbox_rejected',canPrint:accepted,canShare:accepted,qrCode:accepted?qrCode:null}
+}
+
+async function loadSandboxOutputState(db:any, invoiceId:string, tenantId:string):Promise<Record<string, unknown>> {
+  const { data: invoice, error } = await db
+    .from('invoices')
+    .select('id,branch_id,zatca_status,zatca_invoice_type,original_invoice_id,zatca_qr_code')
+    .eq('id', invoiceId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+  if (error || !invoice?.id) throw new Error('Invoice not found')
+
+  let documentKind = invoice.zatca_invoice_type === 'standard' ? 'standard' : 'simplified'
+  if ((invoice.zatca_invoice_type === 'credit_note' || invoice.zatca_invoice_type === 'debit_note') && invoice.original_invoice_id) {
+    const { data: original } = await db
+      .from('invoices')
+      .select('zatca_invoice_type')
+      .eq('id', invoice.original_invoice_id)
+      .eq('branch_id', invoice.branch_id)
+      .maybeSingle()
+    if (original?.zatca_invoice_type === 'standard') documentKind = 'standard'
+  }
+  const invoiceStatus = String(invoice.zatca_status ?? 'pending')
+  const terminal = invoiceStatus === 'reported' || invoiceStatus === 'cleared'
+  const qrCode = terminal && typeof invoice.zatca_qr_code === 'string' ? invoice.zatca_qr_code : null
+  return {
+    invoiceId: invoice.id,
+    invoiceStatus,
+    finalizationStatus: terminal ? 'sandbox_accepted' : invoiceStatus === 'failed' ? 'sandbox_rejected' : 'sandbox_pending',
+    artifactStage: terminal ? 'sandbox_final' : 'sandbox_pending',
+    documentKind,
+    reportingDisplayState: invoiceStatus === 'reported' ? 'reported' : invoiceStatus === 'cleared' ? 'cleared' : 'reporting_pending',
+    canPrint: Boolean(qrCode),
+    canShare: Boolean(qrCode),
+    retryAvailable: invoiceStatus === 'pending' || invoiceStatus === 'failed',
+    reconciliationRequired: false,
+    qrCode,
+    error: null,
+  }
 }
 
 Deno.serve(async(req:Request)=>{
   if(req.method==='OPTIONS') return new Response('ok',{status:200,headers:corsHeaders})
   if(req.method!=='POST') return jsonResponse({error:'Method not allowed'},405)
   try{
-    requireServiceRole(req)
     const body=await req.json().catch(()=>({}))
-    if(!body||typeof body!=='object'||Object.keys(body).some(k=>!['invoiceId','source'].includes(k))) return jsonResponse({error:'Unsupported request field'},400)
+    if(!body||typeof body!=='object'||Object.keys(body).some(k=>!['invoiceId','source','action'].includes(k))) return jsonResponse({error:'Unsupported request field'},400)
+    const url=Deno.env.get('SUPABASE_URL')!, service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if(!service) return jsonResponse({error:'Server configuration error'},500)
+    const db=createClient(url,service,{auth:{persistSession:false}})
     const invoiceId=typeof body.invoiceId==='string'?body.invoiceId:''
     if(!invoiceId) return jsonResponse({error:'Missing required field: invoiceId'},400)
-    const url=Deno.env.get('SUPABASE_URL')!, service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if(!service) return jsonResponse({error:'Unauthorized'},401)
-    const db=createClient(url,service,{auth:{persistSession:false}})
-    const lookup=await db.from('invoices').select('tenant_id').eq('id',invoiceId).single()
-    const tenantId=lookup.data?.tenant_id??''
-    return jsonResponse(await processInvoice(db as any,invoiceId,tenantId,true))
+    const accessToken = bearerToken(req)
+    const { data: authData, error: authError } = await db.auth.getUser(accessToken)
+    if (authError || !authData.user) return jsonResponse({error:'Unauthorized'},401)
+    const caller = await loadCallerProfile(db, authData.user.id)
+    if (!caller) return jsonResponse({error:'Unauthorized'},401)
+    const authorized = await authorizeInvoiceSubmission(db, invoiceId, caller)
+    if (!authorized.ok) return authorized.response
+    if (body.action === 'status') {
+      return jsonResponse(await loadSandboxOutputState(db, invoiceId, authorized.target.tenantId))
+    }
+    return jsonResponse(await processInvoice(db as any,invoiceId,authorized.target.tenantId,true))
   }catch(error){
     const message=safeZatcaText(error instanceof Error?error.message:'Internal error',240)
+    if(error instanceof SandboxSubmissionForbiddenError) return jsonResponse({error:'Forbidden'},403)
     if(message==='Unauthorized') return jsonResponse({error:'Unauthorized'},401)
-    if(message==='Invoice is outside the authorized Sandbox demo scope') return jsonResponse({error:'Forbidden'},403)
     return jsonResponse({error:message},500)
   }
 })

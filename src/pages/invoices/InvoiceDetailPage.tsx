@@ -16,7 +16,8 @@ import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMetho
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printCurrentDocument, printCurrentPageDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { executeAndroidPrint } from '@/lib/print/androidPrintExecution'
-import { submitInvoiceToZatca, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { submitInvoiceForBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { isSandboxFiscalDocument } from '@/lib/zatca/fiscalDocumentScope'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
@@ -193,7 +194,7 @@ export default function InvoiceDetailPage() {
   const creditNoteTriggerRef = useRef<HTMLButtonElement>(null)
 
   const nonFiscalDemo = invoice?.is_demo === true
-  const sandboxDocument = Boolean(invoice && !nonFiscalDemo && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
+  const sandboxDocument = isSandboxFiscalDocument(invoice, branch)
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
   const selectedQrPayload = sandboxDocument
     ? selectStoredInvoiceQr(null, 'sandbox', {
@@ -340,7 +341,10 @@ export default function InvoiceDetailPage() {
   }, [id, loadAttempt])
 
   useEffect(() => {
-    if (!invoice || !isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) return
+    if (!invoice || !sandboxDocument) {
+      setSandboxValidation(null)
+      return
+    }
     let cancelled = false
     setQrStatus('loading')
     getSandboxValidationStatus(invoice.id)
@@ -352,10 +356,10 @@ export default function InvoiceDetailPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice])
+  }, [invoice?.id, sandboxDocument])
 
   useEffect(() => {
-    if (!invoice || isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+    if (!invoice || !branch || sandboxDocument) {
       setOutputState(null)
       return
     }
@@ -371,7 +375,7 @@ export default function InvoiceDetailPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, qrRetryVersion])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, branch, sandboxDocument, qrRetryVersion])
 
   // Generate QR code after data loads
   useEffect(() => {
@@ -379,9 +383,9 @@ export default function InvoiceDetailPage() {
     let cancelled = false
 
     async function generateQR() {
-      const sandboxDocument = isPermanentDemoSandboxBranch(invoice!.tenant_id, invoice!.branch_id)
-      if (!sandboxDocument && !outputStateMatchesInvoice) return
-      if (sandboxDocument && sandboxValidation?.invoiceId !== invoice!.id) return
+      const sandboxGeneratedDocument = isSandboxFiscalDocument(invoice!, branch!)
+      if (!sandboxGeneratedDocument && !outputStateMatchesInvoice) return
+      if (sandboxGeneratedDocument && sandboxValidation?.invoiceId !== invoice!.id) return
 
       setQrStatus('loading')
       const result = await renderIssuedDocumentQr(
@@ -528,9 +532,14 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     setResubmitting(true)
     try {
       setInvoice(prev => prev ? { ...prev, zatca_status: 'pending' } : prev)
-      await submitInvoiceToZatca(invoice.id, invoice.branch_id, {
-        source: 'manual_retry',
-        documentKind: isStandardDocument ? 'standard' : 'simplified',
+      await submitInvoiceForBranch({
+        invoiceId: invoice.id,
+        tenantId: invoice.tenant_id,
+        branchId: invoice.branch_id,
+        options: {
+          source: 'manual_retry',
+          documentKind: isStandardDocument ? 'standard' : 'simplified',
+        },
       })
       const { data: refreshed } = await supabase.from('invoices').select(INVOICE_SAFE_SELECT).eq('id', invoice.id).single()
       if (refreshed) setInvoice(refreshed as Invoice)

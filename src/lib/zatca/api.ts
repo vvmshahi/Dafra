@@ -8,7 +8,8 @@
  *
  * Edge Function endpoints:
  *   POST /functions/v1/zatca-submit       — Invoice reporting / clearance
- *   POST /functions/v1/zatca-validate-sandbox-demo — Permanent-demo compliance validation
+ *   POST /functions/v1/zatca-onboard-sandbox-demo — branch-scoped Sandbox onboarding
+ *   POST /functions/v1/zatca-submit-sandbox-demo — branch-scoped Sandbox status/submission
  *   POST /functions/v1/zatca-onboard-production — Owner-only production onboarding
  *   POST /functions/v1/zatca-disconnect-production — Owner-only local production disconnect
  */
@@ -379,8 +380,44 @@ export interface SandboxDemoConnectionStatus {
   active: boolean
 }
 
-/** Authoritative server-side routing state. Never infer this from tenant or
- * historical branch UUIDs in the browser. */
+export type SandboxOnboardingAction =
+  | 'get_status'
+  | 'generate_csr'
+  | 'request_compliance_csid'
+  | 'submit_compliance_documents'
+  | 'request_sandbox_production_csid'
+  | 'activate'
+  | 'retry_failed_step'
+
+export interface SandboxOnboardingResponse {
+  ok: boolean
+  branchId: string
+  environment: 'sandbox'
+  status: 'not_started' | 'csr_ready' | 'compliance_csid_ready' | 'compliance_checks_pending' | 'compliance_passed' | 'sandbox_production_csid_ready' | 'active' | 'failed' | 'expired' | 'revoked'
+  functionalityMap?: ZatcaFunctionalityMap | null
+  completedSteps?: string[]
+  requiredComplianceDocuments?: string[]
+  certificateExists?: boolean
+  complianceCredentialExists?: boolean
+  sandboxProductionCredentialExists?: boolean
+  expiresAt?: string | null
+  failedStep?: string | null
+  lastError?: string | null
+  operationInProgress?: string | null
+  reconciliationStatus?: string | null
+  updatedAt?: string | null
+  activatedAt?: string | null
+  message?: string
+  idempotent?: boolean
+  complianceSampleResults?: Array<{
+    type: string
+    status: 'accepted' | 'blocked' | 'ambiguous_failed'
+    httpStatus?: number
+    warningsCount?: number
+    errorsCount?: number
+  }>
+}
+
 export type ZatcaConnectionState = 'not_started' | 'onboarding' | 'connected' | 'blocked' | 'failed'
 
 export interface ZatcaConnectionResolution {
@@ -390,75 +427,27 @@ export interface ZatcaConnectionResolution {
   onboarding_stage: string
   credential_status: string
   readiness_reason: string
+  submission_verification?: 'not_verified' | 'submission_verified'
 }
 
 export async function getZatcaConnectionState(branchId: string): Promise<ZatcaConnectionResolution> {
   return edgePostSafe<ZatcaConnectionResolution>('resolve-zatca-connection', { branchId })
 }
 
-export interface SandboxOnboardingStatus {
-  ok: boolean
-  branchId: string
-  environment: 'sandbox'
-  status: string
-  operationId?: string | null
-  onboardingUid?: string | null
-  functionalityMap?: ZatcaFunctionalityMap | null
-  completedSteps: string[]
-  requiredComplianceDocuments: string[]
-  certificateExists: boolean
-  publicKeyExists: boolean
-  complianceCredentialExists: boolean
-  sandboxProductionCredentialExists: boolean
-  expiresAt?: string | null
-  lastError?: string | null
-  failedStep?: string | null
-  operationInProgress?: string | null
-  reconciliationStatus?: string | null
-  restartRequired?: boolean
-  activatedAt?: string | null
-  updatedAt?: string | null
-  lastSafeResponse?: Record<string, unknown> | null
+export async function getSandboxOnboardingStatus(branchId: string, tenantId: string): Promise<SandboxOnboardingResponse> {
+  return edgePostSafe<SandboxOnboardingResponse>('zatca-onboard-sandbox-demo', {
+    action: 'get_status', tenantId, branchId,
+  })
 }
 
-export type SandboxBranchOnboardingAction =
-  | 'get_status'
-  | 'generate_csr'
-  | 'request_compliance_csid'
-  | 'submit_compliance_documents'
-  | 'request_sandbox_production_csid'
-  | 'activate'
-  | 'retry_failed_step'
-
-export interface SandboxBranchOnboardingResponse {
-  ok: boolean
-  branchId: string
-  environment: 'sandbox'
-  status: 'not_started' | 'csr_ready' | 'compliance_csid_ready' | 'compliance_checks_pending' | 'compliance_passed' | 'sandbox_production_csid_ready' | 'active' | 'failed' | 'expired' | 'revoked'
-  functionalityMap?: ZatcaFunctionalityMap | null
-  completedSteps?: string[]
-  complianceCredentialExists?: boolean
-  sandboxProductionCredentialExists?: boolean
-  complianceSampleResults?: Array<{ type: string; status: 'accepted' | 'blocked' | 'ambiguous_failed'; httpStatus?: number }>
-  failedStep?: string | null
-  lastError?: string | null
-  operationInProgress?: string | null
-  operationStartedAt?: string | null
-  reconciliationStatus?: string | null
-}
-
-export async function getSandboxBranchOnboardingStatus(branchId: string, tenantId: string): Promise<SandboxBranchOnboardingResponse> {
-  return sandboxEdgePost<SandboxBranchOnboardingResponse>({ action: 'get_status', tenantId, branchId })
-}
-
-export async function runSandboxBranchOnboarding(params: {
+export async function onboardSandboxZatca(params: {
   branchId: string
   tenantId: string
-  action: Exclude<SandboxBranchOnboardingAction, 'get_status'>
+  action: Exclude<SandboxOnboardingAction, 'get_status'>
   otp?: string
   functionalityMap?: ZatcaFunctionalityMap
-}): Promise<SandboxBranchOnboardingResponse> {
-  return sandboxEdgePost<SandboxBranchOnboardingResponse>({
+}): Promise<SandboxOnboardingResponse> {
+  return edgePostSafe<SandboxOnboardingResponse>('zatca-onboard-sandbox-demo', {
     action: params.action,
     tenantId: params.tenantId,
     branchId: params.branchId,
@@ -467,118 +456,70 @@ export async function runSandboxBranchOnboarding(params: {
   })
 }
 
-export async function getSandboxDemoOnboardingStatus(): Promise<SandboxOnboardingStatus> {
-  return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
-    action: 'get_status',
-  })
-}
+// Owner dashboard cards use this explicit branch-scoped name. It is the same
+// canonical endpoint and intentionally has no UUID-specific routing.
+export const runSandboxBranchOnboarding = onboardSandboxZatca
 
-export type SandboxReconnectRequest = {
-  otp: string
-}
-
-export interface SandboxResetResult {
-  ok: boolean
-  reset: boolean
-  already_reset: boolean
-  credential_id?: string
-  onboarding_uid?: string
-  previous_stage?: string
-  previous_operation?: string | null
-  status: string
-  reason: string
-  reset_at?: string
-}
-
-const PERMANENT_DEMO_TRADING_BRANCH_ID = '14271653-b404-44bf-9f39-7e9927569c02'
-
-export async function runSandboxDemoOnboarding(params: {
-  action: 'generate_csr' | 'request_compliance_csid' | 'submit_compliance_documents' | 'request_sandbox_production_csid' | 'activate'
-  functionalityMap?: ZatcaFunctionalityMap
-  reconnect?: SandboxReconnectRequest
-}): Promise<SandboxOnboardingStatus> {
-  return edgePostSafe<SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
-    action: params.action,
-    ...(params.functionalityMap ? { functionalityMap: params.functionalityMap } : {}),
-    ...(params.reconnect ?? {}),
-  })
-}
-
-export interface TradingSandboxV2Event {
-  session_id?: string
-  event_at: string
-  stage: string
-  status: 'pending' | 'success' | 'failed'
-  http_status?: number | null
-  safe_code?: string | null
-  safe_message?: string | null
-  request_id?: string | null
-  non_secret_response_fields?: string[]
-  required_fields_present?: Record<string, boolean>
-  public_key_fingerprint_prefixes?: Record<string, string>
-}
-
-export interface TradingSandboxV2Status {
-  ok: boolean
-  onboardingVersion: 2
-  environment: 'integration_sandbox'
-  sessionId: string | null
-  status: 'not_started' | 'in_progress' | 'failed' | 'completed'
-  stage: string
-  functionalityMap: '0100'
-  productionCertificateField: 'binarySecurityToken'
-  errorCode?: string | null
-  errorMessage?: string | null
-  requestId?: string
-  events: TradingSandboxV2Event[]
-}
-
-/** Owner-only, isolated Trading Demo Integration Sandbox V2 onboarding. */
-export async function runTradingSandboxV2Onboarding(otp: string): Promise<TradingSandboxV2Status> {
-  return edgePostSafe<TradingSandboxV2Status>('zatca-onboard-trading-sandbox-v2', { otp })
-}
-
-export async function resetSandboxDemoOnboarding(): Promise<SandboxResetResult & SandboxOnboardingStatus> {
-  return edgePostSafe<SandboxResetResult & SandboxOnboardingStatus>('zatca-onboard-sandbox-demo', {
-    action: 'reset_sandbox_onboarding',
-    confirmation: 'RESET SANDBOX',
-  })
-}
-
-export async function activateSandboxDemoConnection(): Promise<SandboxDemoConnectionStatus> {
-  return edgePostSafe<SandboxDemoConnectionStatus>('zatca-validate-sandbox-demo', {
-    action: 'activate_compliance_demo',
-    branchId: PERMANENT_DEMO_TRADING_BRANCH_ID,
-  })
+// Compatibility presentation model for historic invoice screens. Requests are
+// routed only to the canonical branch-scoped Sandbox submit/status endpoint.
+function sandboxValidationFromCanonicalOutput(invoiceId: string, payload: any): SandboxValidationResponse {
+  const invoiceStatus = String(payload?.invoiceStatus ?? 'pending')
+  const status: SandboxValidationStatus = invoiceStatus === 'reported' || invoiceStatus === 'cleared'
+    ? 'sandbox_validated'
+    : invoiceStatus === 'failed'
+      ? 'sandbox_validation_rejected'
+      : 'sandbox_validation_pending'
+  return {
+    ok: status === 'sandbox_validated' || status === 'sandbox_validated_with_warnings',
+    eligible: payload?.retryAvailable === true,
+    validationId: null,
+    invoiceId: String(payload?.invoiceId ?? invoiceId),
+    status,
+    message: typeof payload?.error === 'string' ? payload.error : undefined,
+    explanation: 'Canonical Sandbox submission status.',
+    httpStatus: null,
+    warnings: [],
+    errors: [],
+    updatedAt: null,
+    qrCode: typeof payload?.qrCode === 'string' ? payload.qrCode : null,
+    retryAllowed: payload?.retryAvailable === true,
+  }
 }
 
 export async function getSandboxValidationStatus(invoiceId: string): Promise<SandboxValidationResponse> {
-  return edgePostSafe<SandboxValidationResponse>('zatca-validate-sandbox-demo', {
+  const output = await edgePostSafe<any>('zatca-submit-sandbox-demo', {
     action: 'status',
     invoiceId,
   })
+  return sandboxValidationFromCanonicalOutput(invoiceId, output)
 }
 
 export async function getSandboxValidationStatuses(invoiceIds: string[]): Promise<Record<string, SandboxValidationResponse>> {
-  const response = await edgePostSafe<{ ok: boolean; attempts: Record<string, SandboxValidationResponse> }>(
-    'zatca-validate-sandbox-demo',
-    { action: 'list_status', invoiceIds },
-  )
-  return response.attempts
+  const entries = await Promise.all(invoiceIds.map(async invoiceId => [
+    invoiceId,
+    await getSandboxValidationStatus(invoiceId),
+  ] as const))
+  return Object.fromEntries(entries)
 }
 
 export async function validateInvoiceInSandbox(invoiceId: string): Promise<SandboxValidationResponse> {
-  return edgePostSafe<SandboxValidationResponse>('zatca-validate-sandbox-demo', {
-    action: 'validate',
+  const output = await edgePostSafe<any>('zatca-submit-sandbox-demo', {
     invoiceId,
   })
+  return sandboxValidationFromCanonicalOutput(invoiceId, output)
 }
 
 export async function getSandboxDemoConnectionStatus(branchId: string): Promise<SandboxDemoConnectionStatus> {
-  return edgePostSafe<SandboxDemoConnectionStatus>('zatca-validate-sandbox-demo', {
-    action: 'connection_status',
-    branchId,
-  })
+  const connection = await getZatcaConnectionState(branchId)
+  return {
+    ok: connection.connection_state === 'connected',
+    branchId: connection.branch_id,
+    environment: 'ZATCA Sandbox',
+    connection: connection.connection_state === 'connected' ? 'Active' : 'Not active',
+    complianceChecks: connection.onboarding_stage,
+    productionSubmission: 'Not enabled',
+    active: connection.connection_state === 'connected',
+  }
 }
 
 // ── Safe legacy certificate metadata ─────────────────────────────────────────

@@ -12,7 +12,8 @@ import { INVOICE_SAFE_SELECT } from '@/lib/invoices/invoiceReadContract'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
 import { selectStoredOutputStateQr, type QrDisplayStatus } from '@/lib/zatca/qrDisplay.mjs'
-import { isPermanentDemoSandboxBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { type ZatcaOutputState } from '@/lib/zatca/submission'
+import { isSandboxFiscalDocument } from '@/lib/zatca/fiscalDocumentScope'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import { RECEIPT_FRAME_FAILED, RECEIPT_FRAME_READY } from '@/lib/receiptPrint'
 import { printCurrentDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
@@ -212,7 +213,7 @@ export default function ReceiptPrintPage() {
     && (sandboxValidation?.status === 'sandbox_validated'
       || sandboxValidation?.status === 'sandbox_validated_with_warnings')
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
-  const sandboxDocument = Boolean(invoice && !nonFiscalDemo && isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id))
+  const sandboxDocument = isSandboxFiscalDocument(invoice, branch)
   const selectedQrPayload = sandboxDocument
     ? selectStoredInvoiceQr(null, 'sandbox', {
       sandboxGenerated: sandboxValidated && Boolean(sandboxValidation?.qrCode),
@@ -238,7 +239,7 @@ export default function ReceiptPrintPage() {
   useReceiptPrintStyle(receiptProfile, electronPrint)
 
   useEffect(() => {
-    if (!invoice || nonFiscalDemo || !isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+    if (!invoice || !branch || nonFiscalDemo || !sandboxDocument) {
       setSandboxValidation(null)
       return
     }
@@ -253,10 +254,10 @@ export default function ReceiptPrintPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.tenant_id, invoice?.branch_id, nonFiscalDemo])
+  }, [invoice?.id, invoice?.tenant_id, invoice?.branch_id, branch, nonFiscalDemo, sandboxDocument])
 
   useEffect(() => {
-    if (!invoice || nonFiscalDemo || isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)) {
+    if (!invoice || !branch || nonFiscalDemo || sandboxDocument) {
       setOutputState(null)
       return
     }
@@ -272,7 +273,7 @@ export default function ReceiptPrintPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, nonFiscalDemo, qrRetryVersion])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, branch, nonFiscalDemo, sandboxDocument, qrRetryVersion])
 
   useEffect(() => {
     if (!invoiceId) return
@@ -343,7 +344,7 @@ export default function ReceiptPrintPage() {
         setQrStatus('missing')
         return
       }
-      const environment = isPermanentDemoSandboxBranch(invoice!.tenant_id, invoice!.branch_id) ? 'sandbox' : 'production'
+      const environment = isSandboxFiscalDocument(invoice!, branch!) ? 'sandbox' : 'production'
       if (environment === 'production' && !outputStateMatchesInvoice) return
       if (environment === 'sandbox' && sandboxValidation?.invoiceId !== invoice!.id) return
 

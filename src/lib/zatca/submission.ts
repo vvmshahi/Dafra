@@ -12,7 +12,6 @@ export function isPermanentDemoSandboxBranch(_tenantId: string | null | undefine
   // branch environment and active backend credential; it never uses a UUID list.
   return false
 }
-
 export type ZatcaSubmitSource = 'auto_checkout' | 'auto_credit_note' | 'manual_retry' | 'bulk_retry'
 export const ZATCA_FINALIZATION_CLIENT_VERSION = '2.1.0'
 export const ZATCA_FINALIZATION_EDGE_VERSION = '2.1.0'
@@ -26,6 +25,8 @@ export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
 export interface PosCheckoutDocumentDecision {
   status: 'allowed' | 'blocked'
   code: string | null
+  missingFields: string[]
+  invalidFields: string[]
   documentType: ZatcaDocumentKind | null
   checkoutPath: PosCheckoutPath | null
   capability: ZatcaFunctionalityMap | null
@@ -173,6 +174,12 @@ export async function resolvePosCheckoutDocument(
   return {
     status,
     code: typeof data?.code === 'string' ? data.code : null,
+    missingFields: Array.isArray(data?.missingFields)
+      ? data.missingFields.filter((field: unknown): field is string => typeof field === 'string')
+      : [],
+    invalidFields: Array.isArray(data?.invalidFields)
+      ? data.invalidFields.filter((field: unknown): field is string => typeof field === 'string')
+      : [],
     documentType,
     checkoutPath,
     capability,
@@ -194,18 +201,6 @@ export async function resolvePosCheckoutDocument(
       ? data.demoMode
       : 'not_demo',
   }
-}
-
-export type ZatcaDemoCheckoutMode = 'not_demo' | 'non_fiscal' | 'sandbox_compliance'
-
-export async function getZatcaDemoCheckoutMode(branchId: string): Promise<ZatcaDemoCheckoutMode> {
-  const { data, error } = await (supabase as any).rpc('get_zatca_demo_checkout_mode_v1', {
-    p_branch_id: branchId,
-  })
-  if (error) throw new Error(error.message)
-  return data?.mode === 'non_fiscal' || data?.mode === 'sandbox_compliance'
-    ? data.mode
-    : 'not_demo'
 }
 
 export async function getZatcaFinalizationCapabilities(branchId: string): Promise<ZatcaFinalizationCapabilities> {

@@ -247,7 +247,6 @@ export default function InvoiceSettingsPage({
   const [canEdit, setCanEdit] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [legacyA4Recovery, setLegacyA4Recovery] = useState(false)
   const allowedSections = useMemo<readonly Tab[]>(() => workspace === 'receipts'
     ? ['general', 'branding', 'contact', 'thermal']
     : ['general', 'branding', 'contact', 'a4'], [workspace])
@@ -327,27 +326,13 @@ export default function InvoiceSettingsPage({
   }
 
   async function loadSettings(selected: Branch) {
-    setLoading(true); setSaveError(null); setLegacyA4Recovery(false)
+    setLoading(true); setSaveError(null)
     try {
       const { data, error } = await rpc('get_branch_invoice_settings', { p_branch_id: selected.id })
       if (error) throw error
       const next = fromResponse(data as SettingsResponse, selected)
       setDraft(next); setSaved(next); setCanEdit((data as SettingsResponse | null)?.can_edit !== false); setSaveOk(false)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t('settings:invoiceSettings.loadFailed')
-      if (/A4 artwork dimensions are outside the safe range/i.test(message)) {
-        // The stored artwork is optional presentation state. Initialise an
-        // editable canonical draft so the normal settings RPC can repair it;
-        // never leave the operator on a permanent loading screen.
-        const fallback = fromResponse(null, selected)
-        setDraft(fallback); setSaved(fallback)
-        setCanEdit(profile?.role === 'owner' || profile?.role === 'branch')
-        setLegacyA4Recovery(true)
-        setSaveError(null)
-      } else {
-        setSaveError(message)
-      }
-    }
+    } catch (error) { setSaveError(error instanceof Error ? error.message : t('settings:invoiceSettings.loadFailed')) }
     finally { setLoading(false) }
   }
 
@@ -377,7 +362,7 @@ export default function InvoiceSettingsPage({
       const { data, error } = await rpc('update_branch_invoice_settings', { p_payload: payload })
       if (error) throw error
       const next = fromResponse(data, branch ?? ({} as Branch))
-      setDraft(next); setSaved(next); setLegacyA4Recovery(false); setSaveOk(true)
+      setDraft(next); setSaved(next); setSaveOk(true)
     } catch (error) {
       const rpcError = error as PostgrestError
       if (import.meta.env.DEV) {
@@ -505,8 +490,7 @@ export default function InvoiceSettingsPage({
   const useBranchName = !!p && p.identity.display_heading === branchName
   const setUseBranchName = (enabled: boolean) => updateDraft(current => ({ ...current, presentation: { ...current.presentation, identity: { ...current.presentation.identity, display_heading: enabled ? branchName : null, custom_display_name: enabled ? null : current.presentation.identity.custom_display_name, show_branch_name: false, heading_mode: enabled ? 'branch' : 'custom' } } }))
 
-  if (authLoading || loading) return <div className="grid h-64 place-items-center"><Loader2 className="animate-spin text-primary-600" /></div>
-  if (!draft || !previewModel) return <div className="mx-auto grid min-h-64 max-w-lg place-items-center rounded-2xl border border-red-100 bg-red-50 p-6 text-center"><div><AlertCircle className="mx-auto text-red-600" /><p className="mt-3 text-sm font-semibold text-red-900">{saveError ?? t('settings:invoiceSettings.loadFailed')}</p><button type="button" onClick={() => branch && void loadSettings(branch)} className="mt-4 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700">Retry</button></div></div>
+  if (authLoading || loading || !draft || !previewModel) return <div className="grid h-64 place-items-center"><Loader2 className="animate-spin text-primary-600" /></div>
 
   const allTabs: { id: Tab; label: string }[] = [
     { id: 'general', label: t(`printing:workspace.sections.${workspace}.general`) },
@@ -552,7 +536,6 @@ export default function InvoiceSettingsPage({
 
   return <div className={`invoice-editor-shell flex min-h-0 flex-col ${embedded ? '' : 'min-h-[720px]'}`}>
     {!embedded && <header className="border-b border-gray-200 pb-5"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-primary-700">{t('printing:invoiceSettings.eyebrow')}</p><h1 className="mt-1 text-2xl font-bold text-gray-950">{t('printing:invoiceSettings.title')}</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">{t('printing:invoiceSettings.subtitle')}</p></div>{branches.length > 1 && <label className="min-w-48 text-xs font-semibold text-gray-700">{t('printing:invoiceSettings.branch')}<select value={branchId ?? ''} onChange={event => setBranchId(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-normal"><option value="" disabled>{t('printing:invoiceSettings.selectBranch')}</option>{branches.map(item => <option key={item.id} value={item.id}>{resolveBranchDisplayName(item, i18n.resolvedLanguage?.startsWith('ar') === true)}</option>)}</select></label>}</div></header>}
-    {legacyA4Recovery && <div className="my-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900" role="status"><AlertCircle size={16} className="mt-0.5 shrink-0" /><p className="text-xs leading-5">Legacy A4 artwork exceeded the current safe layout bounds. A canonical, editable A4 draft is shown; save the settings to replace only that optional artwork configuration.</p></div>}
     <DocumentStudioWorkspace
       configurationLabel={t('workspace.studio.configuration')}
       previewLabel={t('printing:invoiceSettings.livePreview')}

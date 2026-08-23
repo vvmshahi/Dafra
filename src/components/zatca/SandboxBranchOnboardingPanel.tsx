@@ -13,7 +13,7 @@ type SandboxBranch = { id: string; tenant_id: string; name: string }
 const STEPS = [
   ['generate_csr', 'CSR'],
   ['request_compliance_csid', 'Compliance CSID'],
-  ['submit_compliance_documents', '6 profile-1100 samples'],
+  ['submit_compliance_documents', 'Kubri safety samples'],
   ['request_sandbox_production_csid', 'Operational CSID'],
   ['activate', 'Connected'],
 ] as const
@@ -22,7 +22,14 @@ function cardStatus(
   status: SandboxBranchOnboardingResponse | null,
   connection: ZatcaConnectionResolution | null,
 ) {
-  if (connection?.connection_state === 'connected') return { label: 'ZATCA Sandbox Connected', tone: 'success' }
+  if (connection?.connection_state === 'connected') {
+    return {
+      label: connection.submission_verification === 'submission_verified'
+        ? 'Sandbox onboarding connected — submission verified'
+        : 'Sandbox onboarding connected — submission not yet verified',
+      tone: 'success',
+    }
+  }
   if (connection?.connection_state === 'failed' || status?.status === 'failed') return { label: 'Sandbox onboarding failed', tone: 'danger' }
   if (connection?.connection_state === 'not_started' || status?.status === 'not_started' || !status) return { label: 'Sandbox setup pending', tone: 'neutral' }
   return { label: 'Sandbox onboarding', tone: 'warning' }
@@ -116,7 +123,8 @@ export default function SandboxBranchOnboardingPanel({ branch }: { branch: Sandb
       {running && <div className="flex items-center gap-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800"><Loader2 size={13} className="animate-spin" />{status?.operationInProgress.replaceAll('_', ' ')} is running. Status refreshes automatically.</div>}
       {(error || status?.lastError) && <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900"><AlertCircle size={14} className="mt-0.5 shrink-0" />{error ?? status?.lastError}</div>}
       {status?.complianceSampleResults?.length ? <div className="space-y-1.5">{status.complianceSampleResults.map(result => <div key={result.type} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-[11px]"><span>{result.type.replaceAll('_', ' ')}</span><span className={result.status === 'accepted' ? 'font-semibold text-emerald-700' : 'font-semibold text-amber-800'}>{result.status}</span></div>)}</div> : null}
-      {needsOtp && <label className="block text-xs font-semibold text-gray-700">Developer Portal Sandbox OTP<input value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-center font-mono text-lg" disabled={loading} /></label>}
+      {needsOtp && <label className="block text-xs font-semibold text-gray-700">Developer Portal Sandbox OTP<input value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit OTP" className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-center font-mono text-lg" disabled={loading} /></label>}
+      <p className="text-[11px] leading-relaxed text-gray-500">Kubri runs the six profile-1100 samples as a safety and completeness policy before enabling Sandbox submission. This label does not state that the Integration Sandbox itself requires all six.</p>
       <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4"><p className="text-xs font-semibold text-gray-700">{display.label}</p>{nextAction && <button type="button" onClick={() => void runNext()} disabled={loading} className="btn-primary inline-flex items-center gap-2 disabled:opacity-50">{loading ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />}{nextAction === 'generate_csr' ? 'Begin Sandbox onboarding' : nextAction === 'request_compliance_csid' ? 'Request Compliance CSID' : nextAction === 'submit_compliance_documents' ? 'Run compliance samples' : nextAction === 'request_sandbox_production_csid' ? 'Request operational CSID' : nextAction === 'activate' ? 'Activate Sandbox' : 'Retry'}</button>}</div>
     </div>}
   </section>

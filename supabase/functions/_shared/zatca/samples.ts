@@ -160,6 +160,9 @@ const FIRST_INVOICE_HASH =
   'NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=='
 
 export function requiredComplianceSamples(map: FunctionalityMap): ComplianceSampleType[] {
+  // Kubri safety/completeness policy: retain a full 1100 set before enabling
+  // Sandbox submission. This is not represented here as an official Developer
+  // Portal requirement; current authenticated Swagger remains authoritative.
   if (map === '0100') return SIMPLIFIED
   if (map === '1000') return STANDARD
   return [...STANDARD, ...SIMPLIFIED]

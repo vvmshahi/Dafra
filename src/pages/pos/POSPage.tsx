@@ -433,11 +433,11 @@ function safeCheckoutErrorKey(err: unknown): string {
   if (/CREDIT_ACCOUNT_SETUP_FAILED/.test(message)) {
     return 'payments:creditUnavailable'
   }
+  if (/STANDARD_BUYER_/.test(message)) {
+    return 'validation:standardBuyerReadinessRequired'
+  }
   if (/STANDARD_CUSTOMER_DETAILS_REQUIRED/.test(message)) {
     return 'validation:standardCustomerDetailsRequired'
-  }
-  if (/SANDBOX_STANDARD_CLEARANCE_UNAVAILABLE/.test(message)) {
-    return 'validation:sandboxStandardUnavailable'
   }
   if (/session has expired|authenticated session is required/i.test(message)) {
     return 'validation:sessionExpired'
@@ -449,6 +449,23 @@ function safeCheckoutErrorKey(err: unknown): string {
     return 'validation:checkoutForbidden'
   }
   return 'validation:checkoutFailed'
+}
+
+const STANDARD_BUYER_FIELD_LABEL_KEYS: Record<string, string> = {
+  legalName: 'customers:readiness.fields.legalName',
+  vatNumber: 'customers:readiness.fields.vatNumber',
+  buildingNumber: 'customers:readiness.fields.buildingNumber',
+  address: 'customers:readiness.fields.address',
+  district: 'customers:readiness.fields.district',
+  city: 'customers:readiness.fields.city',
+  postalCode: 'customers:readiness.fields.postalCode',
+  country: 'customers:readiness.fields.country',
+}
+
+function standardBuyerFieldsFromError(err: unknown): string[] {
+  const message = err instanceof Error ? err.message : ''
+  const [, serializedFields = ''] = message.split('::', 2)
+  return serializedFields.split(',').filter(field => Object.hasOwn(STANDARD_BUYER_FIELD_LABEL_KEYS, field))
 }
 
 function checkoutClientSource(): 'android' | 'web' {
@@ -505,17 +522,6 @@ function creditEligibilityMessageKey(reasonCode: string): string {
     case 'CUSTOMER_INACTIVE': return 'customerInactive'
     case 'AR_CREDIT_ELIGIBLE': return 'creditEligible'
     default: return 'creditUnavailable'
-  }
-}
-
-function creditEligibilitySettingsPath(reasonCode: string, customerId: string, branchId: string) {
-  switch (reasonCode) {
-    case 'BRANCH_CREDIT_DISABLED':
-    case 'AR_CREDIT_BRANCH_DISABLED':
-    case 'CREDIT_NOT_ALLOWED_FOR_BRANCH':
-      return `/branch-settings?section=credit`
-    default:
-      return branchId ? `/branch-settings?section=credit` : '/branch-settings'
   }
 }
 
@@ -647,7 +653,6 @@ function QuickExpenseModal({
     </div>
   )
 }
-
 // ── Receipt overlay ───────────────────────────────────────────────────────────
 
 type ReceiptActionId = 'print_receipt' | 'print_invoice' | 'new_sale'
@@ -2485,7 +2490,7 @@ export default function POSPage() {
     const userId = user?.id
     const tenantId = profile?.tenant_id
     const branchId = profile?.branch_id
-    if (!userId || !tenantId || !branchId) return
+    if (!userId || !tenantId || !branchId || branch?.zatca_environment === 'sandbox') return
 
     let cancelled = false
     void getZatcaFinalizationCapabilities(branchId)
@@ -2506,7 +2511,7 @@ export default function POSPage() {
       })
 
     return () => { cancelled = true }
-  }, [user?.id, profile?.tenant_id, profile?.branch_id])
+  }, [user?.id, profile?.tenant_id, profile?.branch_id, branch?.zatca_environment])
 
   // ── Persist cart ─────────────────────────────────────────────────────────
 
@@ -2616,6 +2621,7 @@ export default function POSPage() {
   const filteredCusts = useMemo(() => searchCustomers(customers, custSearch), [customers, custSearch])
   const selectedCust = customers.find(c => c.id === customerId)
   const selectedCustomerIsBusiness = selectedCust?.customer_type === 'business'
+  const branchCreditDisabled = creditEligibility?.branchEnabled === false
   const exactCustomerMobile = normalizeSaudiMobile(custSearch)
 
   useEffect(() => {
@@ -2995,7 +3001,11 @@ export default function POSPage() {
 
       const documentDecision = await resolvePosCheckoutDocument(branch.id, customerId)
       if (documentDecision?.status === 'blocked') {
-        throw new Error(documentDecision.code ?? 'CHECKOUT_DOCUMENT_BLOCKED')
+        const buyerFields = [...documentDecision.missingFields, ...documentDecision.invalidFields]
+          .filter(field => Object.hasOwn(STANDARD_BUYER_FIELD_LABEL_KEYS, field))
+        throw new Error(buyerFields.length > 0
+          ? `${documentDecision.code ?? 'STANDARD_BUYER_IDENTITY_REQUIRED'}::${buyerFields.join(',')}`
+          : (documentDecision.code ?? 'CHECKOUT_DOCUMENT_BLOCKED'))
       }
       const nonFiscalDemo = documentDecision.checkoutPath === 'demo'
         && documentDecision.isDemo
@@ -3224,15 +3234,22 @@ export default function POSPage() {
           })
           if (preOutputSubmission.mode === 'sandbox_submission') {
             const sandboxResult = preOutputSubmission.result
-            finalizationStatus = sandboxResult.finalizationStatus
-            artifactStage = sandboxResult.artifactStage
-            documentKind = sandboxResult.documentKind ?? documentKind
-            finalQrCode = selectStoredOutputStateQr(sandboxResult)
+            // The submit response is only an acknowledgement. Read the issued
+            // document's persisted status before presenting a customer copy so
+            // the first receipt uses the same final QR as a later reopen.
+            const sandboxOutput = await getInvoiceZatcaOutputState({
+              invoiceId: checkout.invoice_id,
+              branchId: branch.id,
+            })
+            finalizationStatus = sandboxOutput.finalizationStatus
+            artifactStage = sandboxOutput.artifactStage
+            documentKind = sandboxOutput.documentKind ?? documentKind
+            finalQrCode = selectStoredOutputStateQr(sandboxOutput)
             canPrintCustomerCopy = Boolean(finalQrCode)
             if (!canPrintCustomerCopy) {
-              finalizationError = sandboxResult.retryable
+              finalizationError = sandboxOutput.error ?? (sandboxResult.retryable
                 ? 'Sandbox ZATCA submission is pending and can be retried.'
-                : 'Sandbox ZATCA submission did not produce a printable artifact.'
+                : 'Sandbox ZATCA submission did not produce a printable artifact.')
             }
           } else {
             throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
@@ -3469,43 +3486,35 @@ export default function POSPage() {
       }
 
       if (preOutputSubmission) {
-        if (preOutputSubmission.mode === 'sandbox_validation') {
-          const sandboxResult = preOutputSubmission.result
-          const validated = sandboxResult.status === 'sandbox_validated'
-            || sandboxResult.status === 'sandbox_validated_with_warnings'
-          updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
-            ? { ...row, displayZatcaStatus: sandboxResult.status }
-            : row))
-          if (sandboxResult.status === 'sandbox_validated_with_warnings') {
-            toast.warning(t('pos:zatca.warning'), { duration: 5000 })
-          } else if (validated) {
-            toast.success(t('pos:zatca.success'), { duration: 2500 })
-          } else {
-            toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
-          }
-        } else {
-          const result = preOutputSubmission.result
-          updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
-            ? { ...row, zatcaStatus: result.invoiceStatus, displayZatcaStatus: result.invoiceStatus }
-            : row))
-          if (result.ok) {
+        const result = preOutputSubmission.result
+        updateCachedInvoiceRows(branch.tenant_id, branch.id, cachedRows => cachedRows.map(row => row.id === checkout.invoice_id
+          ? { ...row, zatcaStatus: result.invoiceStatus, displayZatcaStatus: result.invoiceStatus }
+          : row))
+        if (result.ok) {
+          if (!sandboxDemo) {
             setReceipt(prev => prev ? { ...prev, canPrint: true } : prev)
             if (isB2BInvoice) void maybeAutoPrintReceiptAfterSale(checkout.invoice_id)
-            toast.success(t('pos:zatca.success'), { duration: 2500 })
-          } else if (result.invoiceStatus === 'failed') {
-            toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
           }
+          if (!sandboxDemo || canPrintCustomerCopy) toast.success(t('pos:zatca.success'), { duration: 2500 })
+        } else if (result.invoiceStatus === 'failed') {
+          toast.error(t('pos:zatca.failed'), { duration: Infinity, action: { label: t('pos:zatca.viewInvoice'), onClick: () => navigate(`/invoices/${checkout.invoice_id}`) } })
         }
       }
     } catch (err) {
       const safeKey = safeCheckoutErrorKey(err)
+      const standardBuyerFields = standardBuyerFieldsFromError(err)
       console.warn('[POSPage charge] checkout failed', err)
       const reloadPackage = [
         'pos:packages.changed',
         'pos:packages.inactive',
         'pos:packages.sellingDisabled',
       ].includes(safeKey)
-      toast.error(t(safeKey), reloadPackage
+      const message = standardBuyerFields.length > 0
+        ? t('validation:standardBuyerReadinessRequired', {
+            fields: standardBuyerFields.map(field => t(STANDARD_BUYER_FIELD_LABEL_KEYS[field])).join(', '),
+          })
+        : t(safeKey)
+      toast.error(message, reloadPackage
         ? {
             action: {
               label: t('pos:packages.reload'),
@@ -3654,29 +3663,34 @@ export default function POSPage() {
             source: 'manual_retry',
             retryDelayMs: 1500,
             contractMode: 'legacy',
-            documentKind: 'simplified',
+            documentKind: receipt.documentKind === 'standard' ? 'standard' : 'simplified',
           },
         })
-        if (routed.mode !== 'sandbox_validation') {
+        if (routed.mode !== 'sandbox_submission') {
           throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
         }
         const sandboxResult = routed.result
-        const validated = sandboxResult.status === 'sandbox_validated'
-          || sandboxResult.status === 'sandbox_validated_with_warnings'
-        const qrCode = sandboxResult.qrCode ?? ''
+        const sandboxOutput = await getInvoiceZatcaOutputState({
+          invoiceId: receipt.invoiceId,
+          branchId: branch.id,
+        })
+        const qrCode = selectStoredOutputStateQr(sandboxOutput)
+        const finalized = sandboxOutput.canPrint && Boolean(qrCode)
         setReceipt(current => current ? {
           ...current,
           zatcaQrCode: qrCode,
-          canPrint: validated && Boolean(qrCode),
-          finalizationStatus: sandboxResult.status ?? 'sandbox_validation_failed',
-          artifactStage: validated ? 'sandbox_compliance_validated' : 'sandbox_compliance_pending',
-          documentKind: 'simplified',
-          finalizationError: validated && qrCode
+          canPrint: finalized,
+          finalizationStatus: sandboxOutput.finalizationStatus,
+          artifactStage: sandboxOutput.artifactStage,
+          documentKind: sandboxOutput.documentKind ?? current.documentKind,
+          finalizationError: finalized
             ? null
-            : (sandboxResult.message ?? 'Sandbox compliance validation did not produce a printable QR.'),
-          reportingDisplayState: sandboxResult.status ?? 'sandbox_validation_failed',
+            : (sandboxOutput.error ?? (sandboxResult.retryable
+              ? 'Sandbox ZATCA submission is pending and can be retried.'
+              : 'Sandbox ZATCA submission did not produce a printable artifact.')),
+          reportingDisplayState: sandboxOutput.reportingDisplayState,
         } : current)
-        if (validated && qrCode) toast.success(t('pos:zatca.success'))
+        if (finalized) toast.success(t('pos:zatca.success'))
         else toast.warning(t('pos:zatca.saleCompletedAttention'))
         return
       }
@@ -4492,7 +4506,7 @@ export default function POSPage() {
             )}
           </div>
 
-          {selectedCustomerIsBusiness && (
+          {selectedCustomerIsBusiness && !branchCreditDisabled && (
             creditEligibilityLoading ? (
               <div className="h-10 animate-pulse rounded-xl border border-gray-100 bg-gray-50" aria-label={t('payments:creditChecking')} />
             ) : creditEligibility?.allowed ? (
@@ -4512,11 +4526,6 @@ export default function POSPage() {
               ) : creditEligibility ? (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
                   <span className="min-w-0"><span className="font-semibold text-gray-700">{t('payments:creditUnavailable')}</span> · {t(`payments:${creditEligibilityMessageKey(creditEligibility.reasonCode)}`)}</span>
-                {creditEligibility.reasonCode === 'BRANCH_CREDIT_DISABLED' && customerId && (
-                  <button type="button" onClick={() => navigate(creditEligibilitySettingsPath(creditEligibility.reasonCode, customerId, branch?.id ?? ''))} className="flex-shrink-0 font-semibold text-primary-700 hover:text-primary-900">
-                    {t('payments:creditSettings')}
-                  </button>
-                )}
               </div>
             ) : null
           )}

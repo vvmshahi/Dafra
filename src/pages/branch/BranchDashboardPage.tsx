@@ -737,7 +737,7 @@ export default function BranchDashboardPage() {
     return () => window.clearInterval(interval)
   }, [registerSession?.sessionId, registerSession?.status, registerSession?.openedAt])
 
-  const demoSandbox = tenant?.is_demo === true
+  const demoSandbox = zatcaConnection?.environment === 'sandbox'
   const productionKey = productionStatus?.onboardingStatus === 'production_connected'
     ? 'zatca.productionConnected'
     : productionStatus?.onboardingStatus === 'compliance_failed' || productionStatus?.onboardingStatus === 'failed'

@@ -29,7 +29,7 @@
   "invoiceCapabilityNotConfigured": "Configure this branch’s ZATCA invoice capability before checkout.",
   "zatcaConnectionRequired": "Connect this branch to ZATCA production before checkout.",
   "atomicNotReady": "Simplified checkout is not ready for this branch yet.",
-  "sandboxStandardUnavailable": "This Sandbox demo currently supports Simplified invoices only.",
+  "standardBuyerReadinessRequired": "Complete the Standard (B2B) buyer details before checkout: {{fields}}.",
   "standardCustomerDetailsRequired": "Complete the Business customer’s tax details before issuing a Standard invoice.",
   "actualCashRequired": "Enter the actual cash counted.",
   "creditNoteChooseItem": "Choose at least one item and enter a return quantity.",

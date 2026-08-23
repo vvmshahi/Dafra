@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
+import { getStandardBuyerReadiness } from '@/lib/customers/standardBuyerReadiness.mjs'
 import type { CustomerType } from '@/types'
 import type { CustomerWithStats } from './CustomersPage'
 
@@ -55,8 +56,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const [email, setEmail] = useState('')
   const [vatNumber, setVatNumber] = useState('')
   const [crNumber, setCrNumber] = useState('')
+  const [buildingNumber, setBuildingNumber] = useState('')
+  const [district, setDistrict] = useState('')
   const [city, setCity] = useState('')
   const [address, setAddress] = useState('')
+  const [postalCode, setPostalCode] = useState('')
+  const [country, setCountry] = useState('SA')
   const [notes, setNotes] = useState('')
   const [emailOpen, setEmailOpen] = useState(false)
   const [addressOpen, setAddressOpen] = useState(false)
@@ -91,8 +96,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setEmail('')
     setVatNumber('')
     setCrNumber('')
+    setBuildingNumber('')
+    setDistrict('')
     setCity('')
     setAddress('')
+    setPostalCode('')
+    setCountry('SA')
     setNotes('')
     setEmailOpen(false)
     setAddressOpen(false)
@@ -111,8 +120,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setEmail(customer?.email ?? '')
     setVatNumber(customer?.vat_number ?? '')
     setCrNumber(customer?.cr_number ?? '')
+    setBuildingNumber(customer?.building_number ?? '')
+    setDistrict(customer?.district ?? '')
     setCity(customer?.city ?? '')
     setAddress(customer?.address ?? '')
+    setPostalCode(customer?.postal_code ?? '')
+    setCountry(customer?.country ?? 'SA')
     setNotes(customer?.notes ?? '')
     setEmailOpen(Boolean(customer?.email))
     setAddressOpen(Boolean(customer?.address))
@@ -175,8 +188,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
     setEmail('')
     setVatNumber('')
     setCrNumber('')
+    setBuildingNumber('')
+    setDistrict('')
     setCity('')
     setAddress('')
+    setPostalCode('')
+    setCountry('SA')
     setNotes('')
     setEmailOpen(false)
     setAddressOpen(false)
@@ -284,8 +301,12 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
         email: email.trim() || null,
         vat_number: isBusiness ? (vatTrimmed || null) : null,
         cr_number: isBusiness ? (crNumber.trim() || null) : null,
+        building_number: isBusiness ? (buildingNumber.trim() || null) : null,
+        district: isBusiness ? (district.trim() || null) : null,
         city: city.trim() || null,
         address: address.trim() || null,
+        postal_code: isBusiness ? (postalCode.trim() || null) : null,
+        country: isBusiness ? (country.trim().toUpperCase() || 'SA') : null,
         notes: notes.trim() || null,
       }
       const query = supabase as unknown as { from: (table: string) => any }
@@ -324,14 +345,18 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
   const previewName = isBusiness
     ? businessName.trim() || t('customers:preview.businessPlaceholder')
     : name.trim() || t('customers:preview.individualPlaceholder')
-  const readinessKey = !businessName.trim()
-    ? 'missingBusinessName'
-    : !vatTrimmed
-      ? 'missingVat'
-      : !vatIsValid
-        ? 'invalidVat'
-        : 'ready'
-  const readinessReady = readinessKey === 'ready'
+  const standardBuyerReadiness = getStandardBuyerReadiness({
+    businessName,
+    vatNumber,
+    buildingNumber,
+    address,
+    district,
+    city,
+    postalCode,
+    country,
+  })
+  const readinessFields = [...standardBuyerReadiness.missingFields, ...standardBuyerReadiness.invalidFields]
+  const readinessReady = standardBuyerReadiness.eligible
 
   return (
     <div
@@ -530,17 +555,64 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                 <section aria-labelledby="customer-address-heading">
                   <SectionHeading id="customer-address-heading">{t('customers:sections.address')}</SectionHeading>
                   <div className="mt-3 space-y-3">
-                    <Field id="customer-city" label={t('customers:fields.city')} required>
-                      <input id="customer-city" className="input" value={city}
-                        onChange={event => setCity(event.target.value)}
-                        placeholder={t('customers:placeholders.city')} dir="auto" />
-                    </Field>
-                    {addressOpen ? <div><Field id="customer-address" label={t('customers:fields.address')}
-                      helper={isBusiness ? t('customers:helpers.businessAddress') : t('customers:helpers.optional')}>
-                      <textarea id="customer-address" className="input resize-none" rows={2} value={address}
-                        onChange={event => setAddress(event.target.value)}
-                        placeholder={t('customers:placeholders.address')} dir="auto" />
-                    </Field>{!address && <OptionalToggle onClick={() => setAddressOpen(false)}>{t('customers:actions.hideAddress')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setAddressOpen(true)}>{t('customers:actions.addAddress')}</OptionalToggle>}
+                    {isBusiness ? (
+                      <>
+                        <p className="rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2 text-xs leading-5 text-primary-900">
+                          {t('customers:helpers.standardBuyerAddress')}
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field id="customer-building-number" label={t('customers:fields.buildingNumber')}
+                            helper={t('customers:helpers.requiredForStandard')}>
+                            <input id="customer-building-number" className="input" value={buildingNumber}
+                              onChange={event => setBuildingNumber(event.target.value)}
+                              placeholder={t('customers:placeholders.buildingNumber')} inputMode="numeric" dir="ltr" />
+                          </Field>
+                          <Field id="customer-postal-code" label={t('customers:fields.postalCode')}
+                            helper={t('customers:helpers.requiredForStandard')}>
+                            <input id="customer-postal-code" className="input" value={postalCode}
+                              onChange={event => setPostalCode(event.target.value)}
+                              placeholder={t('customers:placeholders.postalCode')} inputMode="numeric" maxLength={5} dir="ltr" />
+                          </Field>
+                        </div>
+                        <Field id="customer-address" label={t('customers:fields.streetAddress')}
+                          helper={t('customers:helpers.requiredForStandard')}>
+                          <textarea id="customer-address" className="input resize-none" rows={2} value={address}
+                            onChange={event => setAddress(event.target.value)}
+                            placeholder={t('customers:placeholders.address')} dir="auto" />
+                        </Field>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field id="customer-district" label={t('customers:fields.district')}
+                            helper={t('customers:helpers.requiredForStandard')}>
+                            <input id="customer-district" className="input" value={district}
+                              onChange={event => setDistrict(event.target.value)}
+                              placeholder={t('customers:placeholders.district')} dir="auto" />
+                          </Field>
+                          <Field id="customer-city" label={t('customers:fields.city')} required>
+                            <input id="customer-city" className="input" value={city}
+                              onChange={event => setCity(event.target.value)}
+                              placeholder={t('customers:placeholders.city')} dir="auto" />
+                          </Field>
+                        </div>
+                        <Field id="customer-country" label={t('customers:fields.country')} helper={t('customers:helpers.countrySaudi')}>
+                          <input id="customer-country" className="input" value={country}
+                            onChange={event => setCountry(event.target.value.toUpperCase())}
+                            placeholder="SA" maxLength={2} dir="ltr" />
+                        </Field>
+                      </>
+                    ) : (
+                      <>
+                        <Field id="customer-city" label={t('customers:fields.city')} required>
+                          <input id="customer-city" className="input" value={city}
+                            onChange={event => setCity(event.target.value)}
+                            placeholder={t('customers:placeholders.city')} dir="auto" />
+                        </Field>
+                        {addressOpen ? <div><Field id="customer-address" label={t('customers:fields.address')} helper={t('customers:helpers.optional')}>
+                          <textarea id="customer-address" className="input resize-none" rows={2} value={address}
+                            onChange={event => setAddress(event.target.value)}
+                            placeholder={t('customers:placeholders.address')} dir="auto" />
+                        </Field>{!address && <OptionalToggle onClick={() => setAddressOpen(false)}>{t('customers:actions.hideAddress')}</OptionalToggle>}</div> : <OptionalToggle onClick={() => setAddressOpen(true)}>{t('customers:actions.addAddress')}</OptionalToggle>}
+                      </>
+                    )}
                   </div>
                 </section>
 
@@ -574,7 +646,11 @@ export default function CustomerModal({ open, customer, onClose, onSaved }: Prop
                       {readinessReady
                         ? <CircleCheck size={14} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                         : <CircleAlert size={14} className="mt-0.5 flex-shrink-0" aria-hidden="true" />}
-                      <span>{t(`customers:readiness.${readinessKey}`)}</span>
+                      <span>{readinessReady
+                        ? t('customers:readiness.ready')
+                        : t('customers:readiness.incomplete', {
+                            fields: readinessFields.map(field => t(`customers:readiness.fields.${field}`)).join(', '),
+                          })}</span>
                     </div>
                   )}
                 </section>

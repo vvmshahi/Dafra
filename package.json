@@ -144,6 +144,7 @@
     "test:credit-pos-sandbox-demo": "node scripts/test-credit-pos-sandbox-demo.mjs",
     "test:sandbox-zatca-pos-success-refinement": "node scripts/test-sandbox-zatca-pos-success-refinement.mjs",
     "test:owner-zatca-canonical-flow": "node scripts/test-owner-zatca-canonical-flow.mjs",
+    "test:zatca-sandbox-safe-hardening": "node scripts/test-zatca-sandbox-safe-hardening.mjs",
     "test:trading-sandbox-reconnect": "node scripts/test-trading-sandbox-reconnect-and-document-summary.mjs",
     "test:customer-credit-payment-projection": "node --experimental-strip-types scripts/test-customer-credit-payment-projection.mjs",
     "test:receivables-xlsx": "node --experimental-strip-types scripts/test-receivables-xlsx.mjs",
