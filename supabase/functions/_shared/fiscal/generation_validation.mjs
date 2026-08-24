@@ -9,10 +9,11 @@ export function validateGenerationInvoiceSnapshot(snapshot) {
   const seller = snapshot?.seller
   const customer = snapshot?.customer
   const kind = snapshot?.zatca_invoice_type
+  const family = snapshot?.parentSnapshot?.zatca_invoice_type ?? kind
   const total = Number(snapshot?.total)
   const tax = Number(snapshot?.tax_amount)
 
-  if (!['simplified', 'standard'].includes(kind)) {
+  if (!['simplified', 'standard', 'credit_note', 'debit_note'].includes(kind)) {
     throw new Error(GENERATION_ERRORS.VALIDATION_FAILED)
   }
   if (!seller?.business_name && !seller?.display_name) {
@@ -24,12 +25,18 @@ export function validateGenerationInvoiceSnapshot(snapshot) {
   if (!Number.isFinite(total) || total < 0 || !Number.isFinite(tax) || tax < 0) {
     throw new Error(GENERATION_ERRORS.VALIDATION_FAILED)
   }
-  if (kind === 'standard' && customer?.customer_type === 'business'
+  if (family === 'standard' && customer?.customer_type === 'business'
       && !/^\d{15}$/.test(String(customer?.vat_number ?? ''))) {
     throw new Error(GENERATION_ERRORS.VALIDATION_FAILED)
   }
-  if (snapshot?.original_invoice_id || snapshot?.credit_reason || snapshot?.invoice_reference) {
+  if (['credit_note', 'debit_note'].includes(kind)) {
+    if (!snapshot?.original_invoice_id || !snapshot?.invoice_reference || !snapshot?.credit_reason
+      || !snapshot?.parentSnapshot || snapshot.parentSnapshot.fiscalRegimeAtIssue !== 'generation'
+      || snapshot.parentSnapshot.lifecycleState !== 'generation_issued') {
+      throw new Error(GENERATION_ERRORS.VALIDATION_FAILED)
+    }
+  } else if (snapshot?.original_invoice_id || snapshot?.credit_reason || snapshot?.invoice_reference) {
     throw new Error(GENERATION_ERRORS.VALIDATION_FAILED)
   }
-  return { documentKind: kind, buyerVatRequired: kind === 'standard' && customer?.customer_type === 'business' }
+  return { documentKind: kind, buyerVatRequired: family === 'standard' && customer?.customer_type === 'business' }
 }
