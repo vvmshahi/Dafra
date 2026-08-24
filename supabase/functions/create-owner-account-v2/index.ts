@@ -30,6 +30,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   let operationId: string | null = null
   let createdAuthUserId: string | null = null
+  let failureStep = 'validate_request'
   try {
     const url = Deno.env.get('SUPABASE_URL')!
     const key = Deno.env.get('DAFRA_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -71,6 +72,7 @@ Deno.serve(async (req: Request) => {
     const auditBase = { tenantId: null, branchId: null, actorUserId: caller.id, actorRole: 'super_admin', targetType: 'owner_account_v2', targetId: null, ipHash: await hashRequestIp(req), requestId: requestId(req) }
     const rate = await enforceRateLimit(admin as any, { ...auditBase, action: 'create_owner_account_v2', scope: 'actor', scopeId: caller.id, maxAttempts: 20, windowSeconds: 86400 })
     if (!rate.allowed) return json(rateLimitBody(rate), 429)
+    failureStep = 'begin_db_provisioning'
     const { data: acquired, error: acquireError } = await admin.rpc('acquire_owner_account_provisioning_v2', {
       p_idempotency_key: idempotencyKey, p_request_fingerprint: fingerprint,
       p_initiated_by: caller.id, p_request_payload: payload,
@@ -86,6 +88,7 @@ Deno.serve(async (req: Request) => {
       return json({ code: 'EMAIL_ALREADY_PROVISIONED' }, 409)
     }
     if (!authUser) {
+      failureStep = 'create_auth_user'
       const { data: created, error: createError } = await admin.auth.admin.createUser({
         email, email_confirm: true,
         user_metadata: { full_name: companyName, role: 'owner', owner_account_v2_operation_id: operationId },
@@ -98,15 +101,30 @@ Deno.serve(async (req: Request) => {
       authUser = created.user
       createdAuthUserId = authUser.id
     }
+    failureStep = 'finalize_db_provisioning'
     const { data: completed, error: completeError } = await admin.rpc('complete_owner_account_provisioning_v2', {
       p_operation_id: operationId, p_auth_user_id: authUser.id,
     })
-    if (completeError || !completed?.[0]) {
-      await admin.from('owner_account_provisioning_v2').update({ state: 'failed_recoverable', last_error_code: 'DB_PROVISIONING_FAILED', updated_at: new Date().toISOString() }).eq('id', operationId)
-      if (createdAuthUserId) await admin.auth.admin.deleteUser(createdAuthUserId)
-      return json({ code: 'PROVISIONING_FAILED_RECOVERABLE', provisioning_id: operationId }, 503)
+    if (completeError || !completed?.[0] || completed[0].state === 'failed_recoverable') {
+      const { data: diagnostic } = await admin.from('owner_account_provisioning_v2')
+        .select('failure_step,failure_code,compensation_status').eq('id', operationId).maybeSingle()
+      let compensationStatus = diagnostic?.compensation_status ?? 'db_rollback_complete'
+      if (createdAuthUserId) {
+        const { error: deleteError } = await admin.auth.admin.deleteUser(createdAuthUserId)
+        compensationStatus = deleteError ? 'auth_compensation_pending' : 'complete'
+      }
+      await admin.from('owner_account_provisioning_v2').update({
+        state: 'failed_recoverable', last_error_code: 'DB_PROVISIONING_FAILED',
+        compensation_status: compensationStatus, updated_at: new Date().toISOString(),
+      }).eq('id', operationId)
+      return json({
+        code: 'PROVISIONING_FAILED_RECOVERABLE', provisioning_id: operationId,
+        failure_step: diagnostic?.failure_step ?? failureStep,
+        failure_code: diagnostic?.failure_code ?? (completeError?.code ?? 'DB_PROVISIONING_FAILED'),
+      }, 503)
     }
     const result = completed[0]
+    failureStep = 'generate_setup_link'
     let setupLink: string | null = null
     let setupError: string | null = null
     try {
@@ -117,6 +135,7 @@ Deno.serve(async (req: Request) => {
       setupError = error instanceof Error ? error.message : 'SETUP_LINK_FAILED'
     }
     await admin.rpc('set_owner_account_v2_setup_link', { p_operation_id: operationId, p_generated: !!setupLink, p_error: setupError })
+    failureStep = 'update_onboarding_status'
     await admin.from('tenant_onboarding_status').update({
       owner_setup_status: setupLink ? 'owner_invited' : 'owner_invited',
       owner_setup_link_sent_at: setupLink ? new Date().toISOString() : null,
@@ -135,7 +154,7 @@ Deno.serve(async (req: Request) => {
     if (createdAuthUserId) {
       try { const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('DAFRA_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { autoRefreshToken: false, persistSession: false } }); await admin.auth.admin.deleteUser(createdAuthUserId) } catch { /* compensation is best effort and operation remains recoverable */ }
     }
-    console.error('[create-owner-account-v2]', { operationId, error: error instanceof Error ? error.message : 'INTERNAL_ERROR' })
-    return json({ code: 'PROVISIONING_FAILED_RECOVERABLE', provisioning_id: operationId }, 503)
+    console.error('[create-owner-account-v2]', { operationId, failureStep, error: error instanceof Error ? error.message : 'INTERNAL_ERROR' })
+    return json({ code: 'PROVISIONING_FAILED_RECOVERABLE', provisioning_id: operationId, failure_step: failureStep, failure_code: 'INTERNAL_ERROR' }, 503)
   }
 })

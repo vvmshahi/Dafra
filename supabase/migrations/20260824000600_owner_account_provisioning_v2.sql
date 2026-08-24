@@ -15,6 +15,15 @@ CREATE TABLE IF NOT EXISTS public.owner_account_provisioning_v2 (
   setup_link_generated boolean NOT NULL DEFAULT false,
   setup_link_error text NULL,
   last_error_code text NULL,
+  failure_step text NULL,
+  failure_code text NULL,
+  failure_message_safe text NULL,
+  failure_detail_safe text NULL,
+  failure_hint_safe text NULL,
+  failure_sqlstate text NULL,
+  failure_source text NULL,
+  failed_at timestamptz NULL,
+  compensation_status text NOT NULL DEFAULT 'not_started',
   attempt_count integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -23,6 +32,15 @@ CREATE TABLE IF NOT EXISTS public.owner_account_provisioning_v2 (
 );
 
 ALTER TABLE public.owner_account_provisioning_v2 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_step text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_code text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_message_safe text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_detail_safe text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_hint_safe text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_sqlstate text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failure_source text NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS failed_at timestamptz NULL;
+ALTER TABLE public.owner_account_provisioning_v2 ADD COLUMN IF NOT EXISTS compensation_status text NOT NULL DEFAULT 'not_started';
 REVOKE ALL ON TABLE public.owner_account_provisioning_v2 FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.owner_account_provisioning_v2 TO service_role;
 
@@ -90,6 +108,11 @@ DECLARE
   v_branch public.branches%ROWTYPE;
   v_intent text;
   v_legacy_phase integer;
+  v_failure_step text := 'begin_db_provisioning';
+  v_sqlstate text;
+  v_message text;
+  v_detail text;
+  v_hint text;
 BEGIN
   SELECT * INTO v_op FROM public.owner_account_provisioning_v2
     WHERE id = p_operation_id FOR UPDATE;
@@ -117,6 +140,7 @@ BEGIN
   v_intent := CASE WHEN v_payload->>'fiscal_intent' = 'generation' THEN 'generation' ELSE 'integration' END;
   v_legacy_phase := CASE WHEN coalesce(v_plan.features, '[]'::jsonb) ? 'zatca_phase2' THEN 2 ELSE 1 END;
 
+  v_failure_step := 'create_tenant';
   INSERT INTO public.tenants (
     name, name_ar, vat_number, cr_number, email, phone, city, address,
     country, is_active, max_branches, business_type, is_demo
@@ -130,6 +154,7 @@ BEGIN
     (v_payload->>'account_type') = 'demo'
   ) RETURNING id INTO v_tenant_id;
 
+  v_failure_step := 'link_owner_profile';
   INSERT INTO public.user_profiles (id, role, tenant_id, branch_id, full_name, email, is_active)
   VALUES (p_auth_user_id, 'owner', v_tenant_id, NULL, btrim(v_payload->>'company_name'),
     lower(btrim(v_payload->>'email')), true)
@@ -142,6 +167,7 @@ BEGIN
     WHERE up.id = p_auth_user_id AND up.role = 'owner' AND up.is_active IS TRUE;
   IF v_tenant_id IS NULL THEN RAISE EXCEPTION 'OWNER_PROFILE_CONFLICT'; END IF;
 
+  v_failure_step := 'create_subscription';
   INSERT INTO public.tenant_subscriptions (
     tenant_id, plan_id, status, starts_at, ends_at, trial_ends_at,
     cancelled_at, moyasar_subscription_id, paid_branch_count
@@ -155,11 +181,13 @@ BEGIN
     (v_payload->>'branch_count')::integer
   ) RETURNING id INTO v_subscription_id;
 
+  v_failure_step := 'initialize_fiscal_policy';
   INSERT INTO public.tenant_fiscal_onboarding_intents (tenant_id, requested_regime, requested_by)
   VALUES (v_tenant_id, v_intent, v_op.initiated_by)
   ON CONFLICT (tenant_id) DO UPDATE SET requested_regime = EXCLUDED.requested_regime,
     requested_by = EXCLUDED.requested_by, updated_at = now();
 
+  v_failure_step := 'create_first_branch';
   INSERT INTO public.branches (
     tenant_id, name, business_name, phone, city, country, is_main_branch, is_active,
     vat_mode, invoice_prefix, invoice_language, show_logo, zatca_phase
@@ -169,6 +197,7 @@ BEGIN
     'SA', true, true, 'exclusive', 'INV', 'both', true, v_legacy_phase
   ) RETURNING id INTO v_branch_id;
 
+  v_failure_step := 'finalize_db_provisioning';
   INSERT INTO public.tenant_onboarding_status (
     tenant_id, onboarding_status, owner_setup_status, branch_setup_status,
     zatca_setup_status, updated_by
@@ -187,6 +216,25 @@ BEGIN
   RETURN QUERY SELECT v_op.id, 'complete'::text, p_auth_user_id, v_tenant_id,
     v_subscription_id, v_branch_id, v_branch.fiscal_regime,
     v_branch.fiscal_activation_state, v_branch.fiscal_policy_revision;
+EXCEPTION WHEN OTHERS THEN
+  GET STACKED DIAGNOSTICS
+    v_sqlstate = RETURNED_SQLSTATE,
+    v_message = MESSAGE_TEXT,
+    v_detail = PG_EXCEPTION_DETAIL,
+    v_hint = PG_EXCEPTION_HINT;
+  v_message := left(regexp_replace(coalesce(v_message, 'DATABASE_ERROR'), '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '[REDACTED_EMAIL]', 'g'), 500);
+  v_detail := left(regexp_replace(coalesce(v_detail, ''), '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '[REDACTED_EMAIL]', 'g'), 500);
+  v_hint := left(regexp_replace(coalesce(v_hint, ''), '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '[REDACTED_EMAIL]', 'g'), 500);
+  UPDATE public.owner_account_provisioning_v2 SET
+    state = 'failed_recoverable', last_error_code = 'DB_PROVISIONING_FAILED',
+    failure_step = v_failure_step, failure_code = coalesce(nullif(v_sqlstate, ''), 'UNKNOWN_DATABASE_ERROR'),
+    failure_message_safe = nullif(v_message, ''), failure_detail_safe = nullif(v_detail, ''),
+    failure_hint_safe = nullif(v_hint, ''), failure_sqlstate = nullif(v_sqlstate, ''),
+    failure_source = 'complete_owner_account_provisioning_v2', failed_at = now(),
+    compensation_status = 'db_rollback_complete', updated_at = now()
+  WHERE id = v_op.id;
+  RETURN QUERY SELECT v_op.id, 'failed_recoverable'::text, NULL::uuid, NULL::uuid,
+    NULL::uuid, NULL::uuid, NULL::text, NULL::text, NULL::bigint;
 END
 $$;
 
