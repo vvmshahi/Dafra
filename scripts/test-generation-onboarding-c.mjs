@@ -30,7 +30,7 @@ check(ownerEdge.includes("fiscal_regime: body.fiscal_regime === 'generation' ? '
 check(ownerEdge.includes('safePayload.fiscal_regime'), 'fiscal intent is fingerprinted')
 check(adminLocale.includes('Not required yet'), 'business-facing Generation choice exists')
 check(adminLocale.includes('Ready to integrate with ZATCA'), 'business-facing Integration choice exists')
-check(clients.includes('fiscal_regime:    fiscalRegime'), 'UI submits intent to server')
+check(clients.includes("fiscal_intent:   fiscalRegime === 'generation' ? 'generation' : 'integration_setup'"), 'UI submits canonical fiscal intent to server')
 check(!clients.includes('zatca_phase: 2'), 'super-admin choice is not a technical phase selector')
 check(readiness.includes('get_generation_readiness_v1'), 'browser uses canonical readiness RPC')
 check(readiness.includes('begin_integration_setup_v1'), 'browser uses canonical preparation RPC')

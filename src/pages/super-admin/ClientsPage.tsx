@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -195,6 +195,11 @@ interface CreateOwnerAccountResponse {
   provisioning_id?: string
   user_id?: string
   tenant_id?: string
+  branch_id?: string
+  fiscal_regime?: 'generation' | 'integration'
+  activation_state?: string
+  policy_revision?: number
+  idempotent_replay?: boolean
   email?: string
   setup_link?: string
   setup_link_generated?: boolean
@@ -263,6 +268,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [warning, setWarning] = useState('')
   const [created, setCreated] = useState<CreateOwnerAccountResponse | null>(null)
   const [copied,  setCopied]  = useState(false)
+  const idempotencyKeyRef = useRef('')
 
   useEffect(() => {
     ;(supabase as any)
@@ -303,7 +309,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
     setSaving(true)
     try {
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-owner-account', {
+      if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID()
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-owner-account-v2', {
         body: {
           company_name:    companyName.trim(),
           company_name_ar: companyNameAr.trim() || null,
@@ -311,8 +318,9 @@ function CreateAccountModal({ onCreated, onCancel }: {
           phone:           phone.trim() || null,
           city:            city.trim() || null,
           business_type:    businessType,
-          is_demo:         isDemo,
-          fiscal_regime:    fiscalRegime,
+          account_type:    isDemo ? 'demo' : 'production',
+          fiscal_intent:   fiscalRegime === 'generation' ? 'generation' : 'integration_setup',
+          idempotency_key: idempotencyKeyRef.current,
           plan_id:         planId,
           branch_count:    branchCount,
           payment_type:    paymentType,
@@ -325,15 +333,11 @@ function CreateAccountModal({ onCreated, onCancel }: {
       })
 
       const result = (fnData ?? {}) as CreateOwnerAccountResponse
-      if (result.code === 'CORE_COMPLETE_SETUP_LINK_FAILED') {
-        setWarning(t('validation.setupLinkRetry'))
-        return
-      }
-      if (!['COMPLETE', 'RESUMED_AND_COMPLETE', 'COMPLETE_SETUP_LINK_REGENERATED'].includes(result.code ?? '')) {
+      if (!['OWNER_ACCOUNT_CREATED', 'OWNER_ACCOUNT_CREATED_SETUP_LINK_PENDING'].includes(result.code ?? '')) {
         throw new Error(result.code ?? fnErr?.message ?? 'FAILED_RECOVERABLE')
       }
       setCreated(result)
-      setWarning(result.code === 'COMPLETE_SETUP_LINK_REGENERATED' ? t('validation.setupLinkRegenerated') : '')
+      setWarning(result.code === 'OWNER_ACCOUNT_CREATED_SETUP_LINK_PENDING' ? t('validation.setupLinkRetry') : '')
     } catch (err: any) {
       console.error('Failed to create client account:', err)
       setError(t('validation.createFailed'))
