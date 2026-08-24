@@ -105,18 +105,58 @@ Deno.serve(async req => {
     const token = req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
     if (!token) return response({ error: 'FISCAL_POLICY_UNAUTHORIZED' }, 401)
     const body = await req.json()
-    const allowed = ['invoice_id', 'parent_invoice_id', 'branch_id', 'note_type', 'reason', 'return_stock', 'checkout_idempotency_key', 'expected_policy_revision']
+    const allowed = ['action', 'invoice_id', 'parent_invoice_id', 'branch_id', 'note_type', 'reason', 'return_stock', 'checkout_idempotency_key', 'expected_policy_revision']
     if (!body || Object.keys(body).some(key => !allowed.includes(key))) return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 400)
+    const action = body.action === 'status' ? 'status' : 'finalize'
     let { invoice_id, parent_invoice_id, branch_id, note_type, reason, return_stock, checkout_idempotency_key, expected_policy_revision } = body
+    if (action === 'status') {
+      if (!isUuid(invoice_id) || !isUuid(branch_id)) return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 400)
+    }
     if ((!isUuid(invoice_id) && !isUuid(parent_invoice_id)) || !isUuid(branch_id) || typeof checkout_idempotency_key !== 'string'
       || checkout_idempotency_key.trim().length < 8 || !Number.isInteger(expected_policy_revision) || expected_policy_revision < 1) {
-      return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 400)
+      if (action !== 'status') return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 400)
     }
 
     const db = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
     const { data: user, error: authError } = await db.auth.getUser(token)
     if (authError || !user.user) return response({ error: 'FISCAL_POLICY_UNAUTHORIZED' }, 401)
     const actorId = user.user.id
+
+    if (action === 'status') {
+      const [{ data: profile, error: profileError }, { data: branch, error: branchError }, { data: invoice, error: invoiceError }, { data: operation, error: operationError }] = await Promise.all([
+        db.from('user_profiles').select('id, tenant_id, branch_id, role, is_active').eq('id', actorId).maybeSingle(),
+        db.from('branches').select('id, tenant_id, fiscal_regime').eq('id', branch_id).maybeSingle(),
+        db.from('invoices').select('id, branch_id, tenant_id, invoice_number, zatca_invoice_type, status, fiscal_regime_at_issue, fiscal_lifecycle_state, fiscal_artifact_stage, fiscal_qr_payload').eq('id', invoice_id).maybeSingle(),
+        db.from('generation_fiscal_operations_v1').select('state, error_code, fiscal_result').eq('invoice_id', invoice_id).maybeSingle(),
+      ])
+      if (profileError || branchError || invoiceError || operationError || !profile?.is_active || !branch || !invoice
+        || profile.tenant_id !== branch.tenant_id || invoice.branch_id !== branch.id || invoice.tenant_id !== branch.tenant_id
+        || (profile.role !== 'owner' && !(profile.role === 'branch' && profile.branch_id === branch.id))) {
+        return response({ error: 'BRANCH_ACCESS_DENIED' }, 403)
+      }
+      if (branch.fiscal_regime !== 'generation' && invoice.fiscal_regime_at_issue !== 'generation') {
+        return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 422)
+      }
+      const issued = invoice.fiscal_lifecycle_state === 'generation_issued'
+      const stored = operation?.fiscal_result && typeof operation.fiscal_result === 'object' ? operation.fiscal_result : {}
+      return response({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoice_number,
+        documentKind: invoice.zatca_invoice_type,
+        lifecycleState: invoice.fiscal_lifecycle_state ?? 'not_started',
+        artifactStage: invoice.fiscal_artifact_stage ?? 'none',
+        finalizationStatus: issued ? 'generation_issued' : operation?.state === 'failed' ? 'finalization_failed' : 'finalization_required',
+        canPrint: issued && Boolean(invoice.fiscal_qr_payload),
+        canShare: issued && Boolean(invoice.fiscal_qr_payload),
+        qrCode: issued ? (typeof stored.qrCode === 'string' ? stored.qrCode : invoice.fiscal_qr_payload) : null,
+        error: operation?.state === 'failed' ? operation.error_code : null,
+      })
+    }
+
+    if ((!isUuid(invoice_id) && !isUuid(parent_invoice_id)) || !isUuid(branch_id) || typeof checkout_idempotency_key !== 'string'
+      || checkout_idempotency_key.trim().length < 8 || !Number.isInteger(expected_policy_revision) || expected_policy_revision < 1) {
+      return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 400)
+    }
     const authenticatedDb = createClient(url, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${token}` } },

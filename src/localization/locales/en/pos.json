@@ -164,6 +164,8 @@
     "viewInvoice": "View invoice",
     "finalizingInvoice": "Finalizing invoice…",
     "finalizingTaxInvoice": "Finalizing tax invoice with ZATCA…",
+    "saleRecordedPending": "Sale recorded — fiscal finalization required",
+    "generationIssued": "Generation invoice issued",
     "saleCompletedAttention": "Sale completed — invoice finalization requires attention",
     "statusRefreshUnavailable": "Invoice submitted — final status could not be refreshed",
     "retryFinalization": "Retry finalization",

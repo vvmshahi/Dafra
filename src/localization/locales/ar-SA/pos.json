@@ -164,6 +164,8 @@
     "viewInvoice": "عرض الفاتورة",
     "finalizingInvoice": "جارٍ اعتماد الفاتورة…",
     "finalizingTaxInvoice": "جارٍ اعتماد الفاتورة الضريبية مع ZATCA…",
+    "saleRecordedPending": "تم تسجيل البيع — يتطلب الاعتماد المالي",
+    "generationIssued": "تم إصدار فاتورة التوليد",
     "saleCompletedAttention": "اكتمل البيع — اعتماد الفاتورة يحتاج إلى متابعة",
     "statusRefreshUnavailable": "تم إرسال الفاتورة — تعذّر تحديث الحالة النهائية",
     "retryFinalization": "إعادة محاولة الاعتماد",

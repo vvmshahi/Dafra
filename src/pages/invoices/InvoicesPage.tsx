@@ -48,6 +48,11 @@ type OwnerInvoiceBranch = {
   fiscal_regime?: 'generation' | 'integration'
 }
 
+function isGenerationInvoice(row: InvoiceRow, branches: OwnerInvoiceBranch[]): boolean {
+  return row.fiscalRegimeAtIssue === 'generation'
+    || branches.find(branch => branch.id === row.branchId)?.fiscal_regime === 'generation'
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 type QuickRange = 'today' | 'yesterday' | 'this_month' | 'last_month' | 'custom'
@@ -262,7 +267,7 @@ export default function InvoicesPage() {
   }
 
   useEffect(() => {
-    if (profile?.role !== 'owner' || !profile.tenant_id) {
+    if (!profile?.tenant_id) {
       setOwnerBranches([])
       setSelectedOwnerBranchId(null)
       setOwnerBranchesLoading(false)
@@ -578,10 +583,13 @@ export default function InvoicesPage() {
     return rows.filter(r => {
       if (q && !r.invoiceNumber.toLowerCase().includes(q) && !(r.customerName ?? '').toLowerCase().includes(q) && !(r.invoiceReference ?? '').toLowerCase().includes(q)) return false
       if (payFilter !== 'all' && r.paymentMethod !== payFilter) return false
-      if (zatcaFilter !== 'all' && r.displayZatcaStatus !== zatcaFilter) return false
+      const zatcaFilterStatus = isGenerationInvoice(r, ownerBranches)
+        ? 'not_required'
+        : r.displayZatcaStatus
+      if (zatcaFilter !== 'all' && zatcaFilterStatus !== zatcaFilter) return false
       return true
     })
-  }, [rows, viewKey, search, payFilter, zatcaFilter])
+  }, [rows, viewKey, search, payFilter, zatcaFilter, ownerBranches])
 
   const summary = {
     count:   filtered.length,
@@ -606,7 +614,7 @@ export default function InvoicesPage() {
     || payFilter !== 'all'
     || zatcaFilter !== 'all'
   const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, effectiveBranchId)
-  const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.fiscalRegimeAtIssue !== 'generation' && r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
+  const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => !isGenerationInvoice(r, ownerBranches) && r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
   const emptyTitle = sessionShortcut === 'current'
     ? t('invoices:noCurrentSessionInvoices')
     : sessionShortcut === 'previous'
@@ -634,9 +642,10 @@ export default function InvoicesPage() {
   }
 
   const documentRows = filtered.map(r => {
-    const generationIssued = r.fiscalRegimeAtIssue === 'generation' && r.fiscalLifecycleState === 'generation_issued'
-    const zatcaBase = generationIssued
-      ? { label: 'Issued', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500' }
+    const generationInvoice = isGenerationInvoice(r, ownerBranches)
+    const generationIssued = generationInvoice && r.fiscalLifecycleState === 'generation_issued'
+    const zatcaBase = generationInvoice
+      ? ZATCA_BADGE.not_submitted
       : ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
     const zatcaKey = r.displayZatcaStatus === 'sandbox_validated' ? 'submitted'
       : r.displayZatcaStatus === 'sandbox_validated_with_warnings' ? 'submittedWarnings'
@@ -646,7 +655,16 @@ export default function InvoicesPage() {
       : r.displayZatcaStatus === 'reported' ? 'reported'
       : r.displayZatcaStatus === 'cleared' ? 'cleared'
       : r.displayZatcaStatus.includes('failed') ? 'failed' : 'pending'
-    const zatca = generationIssued ? zatcaBase : { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
+    const zatca = generationInvoice
+      ? { ...zatcaBase, label: t('invoices:notRequired') }
+      : { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
+    const fiscalStatus = generationInvoice ? {
+      label: t(generationIssued ? 'invoices:generationIssued' : 'invoices:generationFinalizationRequired'),
+      bg: generationIssued ? 'bg-emerald-50' : 'bg-amber-50',
+      text: generationIssued ? 'text-emerald-700' : 'text-amber-700',
+      ring: generationIssued ? 'ring-emerald-600/20' : 'ring-amber-600/20',
+      dot: generationIssued ? 'bg-emerald-500' : 'bg-amber-500',
+    } : null
     const payBase = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
     const pay = payBase ? {
       ...payBase,
@@ -660,6 +678,7 @@ export default function InvoicesPage() {
     return {
       row: r,
       zatca,
+      fiscalStatus,
       pay,
       isCancelled: r.status === 'cancelled',
       isCreditNote: r.documentType === 'credit_note',
@@ -1065,7 +1084,7 @@ export default function InvoicesPage() {
                       [t('invoices:vat'), 'text-end'],
                       [t('invoices:total'), 'text-end'],
                       [t('invoices:method'), 'text-center'],
-                      ['ZATCA', 'text-center'],
+                  ['ZATCA / fiscal', 'text-center'],
                       [t('invoices:documentActions'), 'text-center'],
                     ].map(([label, alignment]) => (
                       <th
@@ -1080,7 +1099,7 @@ export default function InvoicesPage() {
                 </thead>
                 <tbody>
                   {documentRows.map(document => {
-                    const { row: r, zatca, pay, isCancelled, isCreditNote } = document
+                    const { row: r, zatca, fiscalStatus, pay, isCancelled, isCreditNote } = document
                     return (
                       <tr
                         key={r.id}
@@ -1128,7 +1147,12 @@ export default function InvoicesPage() {
                         <td className="px-2.5 py-2 text-center align-top">
                           {pay ? <DocumentBadge {...pay} /> : <span className="text-xs text-gray-300">—</span>}
                         </td>
-                        <td className="px-2.5 py-2 text-center align-top"><DocumentBadge {...zatca} /></td>
+                        <td className="px-2.5 py-2 text-center align-top">
+                          <div className="flex flex-col items-center gap-1">
+                            <DocumentBadge {...zatca} />
+                            {fiscalStatus && <DocumentBadge {...fiscalStatus} />}
+                          </div>
+                        </td>
                         <td className="px-2.5 py-1.5 text-center align-top">{renderDocumentActions(document)}</td>
                       </tr>
                     )
@@ -1156,7 +1180,7 @@ export default function InvoicesPage() {
 
             <div className="grid gap-3 p-3 lg:hidden sm:grid-cols-2" data-invoice-mobile-cards>
               {documentRows.map(document => {
-                const { row, zatca, pay, isCancelled, isCreditNote } = document
+                const { row, zatca, fiscalStatus, pay, isCancelled, isCreditNote } = document
                 return (
                   <article
                     key={row.id}
@@ -1199,8 +1223,8 @@ export default function InvoicesPage() {
                         <dd className="mt-1">{pay ? <DocumentBadge {...pay} /> : <span className="text-xs text-gray-300">—</span>}</dd>
                       </div>
                       <div className="min-w-0">
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">ZATCA</dt>
-                        <dd className="mt-1"><DocumentBadge {...zatca} /></dd>
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">ZATCA / fiscal</dt>
+                        <dd className="mt-1 flex flex-col items-start gap-1"><DocumentBadge {...zatca} />{fiscalStatus && <DocumentBadge {...fiscalStatus} />}</dd>
                       </div>
                     </dl>
 

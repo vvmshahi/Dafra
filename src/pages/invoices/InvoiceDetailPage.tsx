@@ -16,7 +16,7 @@ import type { Invoice, InvoiceItem, Payment, Branch, PaymentRefund, PaymentMetho
 import { isElectron, printA4Invoice, printReceipt } from '@/lib/electron'
 import { printCurrentDocument, printCurrentPageDocument, waitForPrintableAssets } from '@/lib/print/browserPrint'
 import { executeAndroidPrint } from '@/lib/print/androidPrintExecution'
-import { submitInvoiceForBranch, type ZatcaOutputState } from '@/lib/zatca/submission'
+import { finalizeGenerationInvoice, getGenerationInvoiceOutputState, submitInvoiceForBranch, type ZatcaFinalizationResult, type ZatcaOutputState } from '@/lib/zatca/submission'
 import { isSandboxFiscalDocument } from '@/lib/zatca/fiscalDocumentScope'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
@@ -182,6 +182,8 @@ export default function InvoiceDetailPage() {
   const [qrStatus,     setQrStatus]     = useState<QrDisplayStatus>('loading')
   const [qrRetryVersion, setQrRetryVersion] = useState(0)
   const [resubmitting, setResubmitting] = useState(false)
+  const [generationRetrying, setGenerationRetrying] = useState(false)
+  const [generationRetryError, setGenerationRetryError] = useState<string | null>(null)
   const [thermalPrinting, setThermalPrinting] = useState(false)
   const [a4Printing, setA4Printing] = useState(false)
   const [previewMode, setPreviewMode] = useState<PreviewMode>('a4')
@@ -189,12 +191,16 @@ export default function InvoiceDetailPage() {
   const [creditModalOpen, setCreditModalOpen] = useState(false)
   const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
+  const [generationOutput, setGenerationOutput] = useState<ZatcaFinalizationResult | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
   const previewTabRefs = useRef<Record<PreviewMode, HTMLButtonElement | null>>({ a4: null, thermal: null })
   const creditNoteTriggerRef = useRef<HTMLButtonElement>(null)
 
   const nonFiscalDemo = invoice?.is_demo === true
   const sandboxDocument = isSandboxFiscalDocument(invoice, branch)
+  const generationDocument = branch?.fiscal_regime === 'generation'
+  const fiscalLifecycleState = (invoice as (Invoice & { fiscal_lifecycle_state?: string | null }) | null)?.fiscal_lifecycle_state ?? null
+  const generationIssued = generationDocument && fiscalLifecycleState === 'generation_issued'
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
   const selectedQrPayload = sandboxDocument
     ? selectStoredInvoiceQr(null, 'sandbox', {
@@ -202,7 +208,9 @@ export default function InvoiceDetailPage() {
         && Boolean(sandboxValidation?.qrCode),
       sandboxQrCode: sandboxValidation?.qrCode,
     })
-    : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
+    : generationDocument
+      ? generationOutput?.canPrint ? generationOutput.qrCode : null
+      : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
   const sandboxValidated = sandboxValidation?.invoiceId === invoice?.id
     && (sandboxValidation?.status === 'sandbox_validated'
       || sandboxValidation?.status === 'sandbox_validated_with_warnings')
@@ -225,10 +233,15 @@ export default function InvoiceDetailPage() {
   const fiscalDocumentRenderable = documentViewModel ? canRenderFiscalDocument(documentViewModel) : false
   const documentReadiness = resolveIssuedDocumentReadiness({
     modelReady: Boolean(invoice && branch && tenant && fiscalDocumentRenderable), nonFiscalDemo,
-    outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true,
+    outputCanPrint: sandboxDocument
+      ? sandboxValidated
+      : generationDocument
+        ? generationOutput?.canPrint === true
+        : outputStateMatchesInvoice && outputState?.canPrint === true,
     qrPayload: selectedQrPayload, qrStatus, qrDataUrl,
   })
   const printReady = documentReadiness.printable
+  const receiptPrintReady = Boolean(invoice && branch && tenant && documentViewModel && fiscalDocumentRenderable)
 
   // Load data
   useEffect(() => {
@@ -361,7 +374,18 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (!invoice || !branch || sandboxDocument) {
       setOutputState(null)
+      if (!generationDocument) setGenerationOutput(null)
       return
+    }
+    if (generationDocument) {
+      let cancelled = false
+      setOutputState(null)
+      setGenerationOutput(null)
+      setQrStatus('loading')
+      getGenerationInvoiceOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id })
+        .then(state => { if (!cancelled) { setGenerationOutput(state); setQrStatus(state.canPrint ? 'loading' : 'failed') } })
+        .catch(() => { if (!cancelled) { setGenerationOutput(null); setQrStatus('failed') } })
+      return () => { cancelled = true }
     }
     let cancelled = false
     setOutputState(null)
@@ -375,7 +399,7 @@ export default function InvoiceDetailPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, branch, sandboxDocument, qrRetryVersion])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, branch, sandboxDocument, generationDocument, qrRetryVersion, loadAttempt])
 
   // Generate QR code after data loads
   useEffect(() => {
@@ -457,8 +481,8 @@ export default function InvoiceDetailPage() {
 
   async function handlePrintThermal() {
     if (thermalPrinting) return
-    if (!invoice || !printReady) {
-      toast.error(t('printing:qrUnavailable'))
+    if (!invoice || !receiptPrintReady) {
+      toast.error(t('printing:receiptFailed'))
       return
     }
 
@@ -548,6 +572,29 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
       if (refreshed) setInvoice(refreshed as Invoice)
     } finally {
       setResubmitting(false)
+    }
+  }
+
+  async function handleGenerationRetry() {
+    if (!invoice || !branch || !invoice.checkout_idempotency_key || branch.fiscal_policy_revision == null || generationRetrying) return
+    setGenerationRetrying(true)
+    setGenerationRetryError(null)
+    try {
+      const result = await finalizeGenerationInvoice({
+        invoiceId: invoice.id,
+        branchId: invoice.branch_id,
+        checkoutIdempotencyKey: invoice.checkout_idempotency_key,
+        expectedPolicyRevision: Number(branch.fiscal_policy_revision),
+      })
+      if (!result.ok) throw new Error(result.error ?? 'Generation invoice finalization requires attention.')
+      toast.success(t('pos:zatca.generationIssued'))
+      setLoadAttempt(attempt => attempt + 1)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Generation invoice finalization requires attention.'
+      setGenerationRetryError(message)
+      toast.warning(t('pos:zatca.saleCompletedAttention'))
+    } finally {
+      setGenerationRetrying(false)
     }
   }
 
@@ -776,14 +823,16 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : creditStatus === 'full' || totalRemainingQuantity <= 0.0005
     ? t('invoices:fullyCreditedReason')
     : null
-  const canSubmitCurrentDocument = outputStateMatchesInvoice
-    && outputState?.documentKind === 'simplified'
-    && outputState.artifactStage === 'simplified_final'
-    ? outputState.retryAvailable
-    : invoice.zatca_status === 'failed'
-      || (isCreditNote && invoice.zatca_status === 'pending')
+  const canSubmitCurrentDocument = !generationDocument && (
+    outputStateMatchesInvoice
+      && outputState?.documentKind === 'simplified'
+      && outputState.artifactStage === 'simplified_final'
+      ? outputState.retryAvailable
+      : invoice.zatca_status === 'failed'
+        || (isCreditNote && invoice.zatca_status === 'pending')
+  )
 
-  const displayZatcaStatus = demoSandbox ? sandboxValidation?.status ?? 'sandbox_not_validated' : invoice.zatca_status
+  const displayZatcaStatus = generationDocument ? 'not_submitted' : demoSandbox ? sandboxValidation?.status ?? 'sandbox_not_validated' : invoice.zatca_status
   const zatcaStatusKey = displayZatcaStatus === 'sandbox_validated'
     ? 'submitted'
     : displayZatcaStatus === 'sandbox_validated_with_warnings'
@@ -795,9 +844,19 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : displayZatcaStatus === 'sandbox_validation_failed'
     ? 'failed'
     : displayZatcaStatus
-  const zatcaStatusLabel = t(`invoices:${zatcaStatusKey}`, {
+  const zatcaStatusLabel = generationDocument ? t('invoices:notRequired') : t(`invoices:${zatcaStatusKey}`, {
     defaultValue: displayZatcaStatus.replaceAll('_', ' '),
   })
+  const generationStatusLabel = generationIssued
+    ? t('invoices:generationIssued')
+    : t('invoices:generationFinalizationRequired')
+  const generationRetryAvailable = Boolean(
+    generationDocument
+    && !generationIssued
+    && invoice.status === 'posted'
+    && invoice.checkout_idempotency_key
+    && branch?.fiscal_policy_revision != null,
+  )
 
   function selectPreview(mode: PreviewMode, focus = false) {
     setPreviewMode(mode)
@@ -847,8 +906,15 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
               <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t('invoices:documentStatus')}>
                 {nonFiscalDemo && <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">{t('pos:demo.badge')}</span>}
                 <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">{t('invoices:zatcaStatus')}: {zatcaStatusLabel}</span>
+                {generationDocument && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${generationIssued ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-800'}`}>{generationStatusLabel}</span>}
                 {!isCreditNote && creditStatus !== 'none' && <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditLabelClass}`}>{creditLabel}</span>}
               </div>
+              {generationRetryError && (
+                <div className="mt-2 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="alert">
+                  <p className="font-semibold">{t('pos:zatca.saleCompletedAttention')}</p>
+                  <p className="mt-1 [overflow-wrap:anywhere]">{generationRetryError}</p>
+                </div>
+              )}
               {customerCredit?.isCustomerCredit && (
                 <div className="mt-3 grid max-w-2xl gap-x-5 gap-y-1.5 rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2.5 text-xs sm:grid-cols-2" aria-label={t('documents:customerCredit')}>
                   <div><span className="text-gray-500">{t('documents:paymentMethod')}</span><span className="ms-2 font-semibold text-rose-800">{t('documents:customerCredit')}</span></div>
@@ -867,12 +933,19 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
                   {a4Printing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Printer size={14} aria-hidden="true" />}
                   {a4Printing ? t('printing:printing') : t('printing:printInvoice')}
                 </button>
-              <button type="button" onClick={() => void handlePrintThermal()} disabled={thermalPrinting || !printReady}
+              <button type="button" onClick={() => void handlePrintThermal()} disabled={thermalPrinting || !receiptPrintReady}
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 outline-none transition-colors hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-[#0F2419] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
                 {thermalPrinting ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Printer size={14} aria-hidden="true" />}
                 {thermalPrinting ? t('printing:printing') : t('printing:printReceipt')}
               </button>
               </div>
+              {generationRetryAvailable && (
+                <button type="button" onClick={() => void handleGenerationRetry()} disabled={generationRetrying}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 outline-none transition-colors hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500 disabled:opacity-50">
+                  <RefreshCw size={13} className={generationRetrying ? 'animate-spin' : ''} aria-hidden="true" />
+                  {generationRetrying ? t('common:loading') : t('pos:zatca.retryFinalization')}
+                </button>
+              )}
               {canSubmitCurrentDocument && !demoSandbox && (
                 <button type="button" onClick={handleResend} disabled={resubmitting}
                   className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 outline-none transition-colors hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50">

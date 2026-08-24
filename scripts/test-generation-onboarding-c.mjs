@@ -42,7 +42,7 @@ check(zatca.includes('profile?.role === \'owner\''), 'CTA is owner gated')
 check(invoices.includes('fiscal_regime_at_issue'), 'invoice list reads issue regime')
 check(invoices.includes('generation_issued'), 'Generation finality is recognized')
 check(invoices.includes('crossRegimeNoteNotAllowed'), 'cross-regime notes fail safely')
-check(invoices.includes("r.fiscalRegimeAtIssue !== 'generation'"), 'Generation documents are excluded from retry count')
+check(invoices.includes('!isGenerationInvoice(r, ownerBranches)'), 'Generation documents are excluded from retry count')
 check(protectedSubmitter === await read('supabase/functions/zatca-submit/index.ts'), 'protected submitter remains readable and unchanged')
 
 console.log(`Generation onboarding C assertions passed: ${count}`)

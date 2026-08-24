@@ -690,6 +690,9 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
   const printReady = receipt.isDemo
     ? receipt.canPrint
     : receipt.canPrint && qrStatus === 'ready' && Boolean(qrDataUrl)
+  // An operational payment receipt does not require the fiscal QR/artifact.
+  // The fiscal invoice remains gated by printReady.
+  const paymentReceiptReady = Boolean(receipt.invoiceId)
   const showReceiptAction = afterSaleAction !== 'a4'
   const showInvoiceAction = afterSaleAction === 'a4' || afterSaleAction === 'both'
   const actionIdCandidates: ReceiptActionId[] = [
@@ -704,7 +707,7 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
     <button
       type="button"
       onClick={() => void openReceiptPrintPage()}
-      disabled={printingReceipt || !printReady}
+      disabled={printingReceipt || !paymentReceiptReady}
       className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {printingReceipt ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
@@ -854,8 +857,8 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
 
   async function openReceiptPrintPage() {
     if (printingReceipt) return
-    if (!printReady) {
-      toast.error(t('printing:qrUnavailable'))
+    if (!paymentReceiptReady) {
+      toast.error(t('pos:printer.receiptFailed'))
       return
     }
     setPrintErrorKey(null)
@@ -932,17 +935,23 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
       {/* Hidden thermal receipt — rendered for print only */}
       <div id="pos-receipt-print-root" className="fixed left-[-10000px] top-0" aria-hidden="true"><ThermalReceipt model={documentViewModel} options={{ id: 'invoice-printable-thermal', qrImageUrl: qrDataUrl, nonFiscalDemo: receipt.isDemo }} /></div>
 
-      {/* Success overlay */}
+          {/* Completion overlay */}
       <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-[#0F2419]/90 p-4 sm:p-6">
         <div className="my-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
 
-          {/* Banner */}
-          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 px-5 py-6 text-center text-white sm:px-8">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
-              <Check size={32} strokeWidth={3} />
+          {/* Fiscal completion and payment completion are distinct states. */}
+          <div className={receipt.canPrint
+            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 px-5 py-6 text-center text-white sm:px-8'
+            : 'bg-amber-50 px-5 py-6 text-center text-amber-900 sm:px-8'}>
+            <div className={receipt.canPrint
+              ? 'mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/20'
+              : 'mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100'}>
+              {receipt.canPrint ? <Check size={32} strokeWidth={3} /> : <AlertCircle size={32} strokeWidth={2.5} />}
             </div>
-            <p className="text-xl font-bold sm:text-2xl">{receipt.customerCredit?.paymentStatus === 'unpaid' ? t('payments:creditSaleRecorded') : t('payments:paymentReceived')}</p>
-            <p className="text-emerald-100 text-sm mt-1"><bdi dir="ltr">{receipt.invoiceNumber}</bdi></p>
+            <p className="text-xl font-bold sm:text-2xl">{receipt.canPrint
+              ? receipt.customerCredit?.paymentStatus === 'unpaid' ? t('payments:creditSaleRecorded') : t('payments:paymentReceived')
+              : t('pos:zatca.saleRecordedPending')}</p>
+            <p className={receipt.canPrint ? 'text-emerald-100 text-sm mt-1' : 'text-amber-700 text-sm mt-1'}><bdi dir="ltr">{receipt.invoiceNumber}</bdi></p>
           </div>
 
           {/* Summary */}

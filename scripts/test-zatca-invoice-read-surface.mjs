@@ -13,12 +13,12 @@ const safeColumns = [
   'taxable_amount', 'tax_amount', 'total_amount', 'currency_code',
   'invoice_date', 'supply_date', 'due_date', 'status', 'payment_status',
   'notes', 'notes_ar', 'cancelled_at', 'cancellation_reason',
-  'created_at', 'updated_at', 'session_id', 'payment_method',
+  'created_at', 'updated_at', 'session_id', 'checkout_idempotency_key', 'payment_method',
   'is_demo', 'original_invoice_id', 'credit_reason', 'document_language',
   'fiscal_regime_at_issue', 'fiscal_lifecycle_state', 'fiscal_artifact_stage', 'identity_snapshot',
 ]
 const hostedBaseSafeColumns = safeColumns.filter(column => ![
-  'is_demo', 'identity_snapshot', 'fiscal_regime_at_issue', 'fiscal_lifecycle_state', 'fiscal_artifact_stage',
+  'is_demo', 'identity_snapshot', 'fiscal_regime_at_issue', 'fiscal_lifecycle_state', 'fiscal_artifact_stage', 'checkout_idempotency_key',
 ].includes(column))
 const preDemoSafeColumns = hostedBaseSafeColumns
 

@@ -135,6 +135,8 @@
   "failed": "فشل",
   "notSubmitted": "غير مُرسل",
   "notRequired": "غير مطلوب",
+  "generationIssued": "تم إصدار فاتورة التوليد",
+  "generationFinalizationRequired": "يتطلب الاعتماد",
   "reported": "تم الإبلاغ",
   "cleared": "تم الاعتماد",
   "void": "ملغاة",

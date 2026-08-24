@@ -131,6 +131,8 @@
   "failed": "Failed",
   "notSubmitted": "Not submitted",
   "notRequired": "Not required",
+  "generationIssued": "Generation issued",
+  "generationFinalizationRequired": "Finalization required",
   "reported": "Reported",
   "cleared": "Cleared",
   "void": "VOID",

@@ -436,6 +436,31 @@ export async function finalizeGenerationInvoice(params: {
   }
 }
 
+/** Read-only Generation lifecycle/artifact state; never enters the ZATCA route. */
+export async function getGenerationInvoiceOutputState(params: {
+  invoiceId: string
+  branchId: string
+}): Promise<ZatcaFinalizationResult> {
+  const { data, error } = await supabase.functions.invoke('fiscal-finalize-generation', {
+    body: { action: 'status', invoice_id: params.invoiceId, branch_id: params.branchId },
+  })
+  if (error) throw new Error(error.message)
+  const lifecycleState = String(data?.lifecycleState ?? 'not_started')
+  return {
+    ok: lifecycleState === 'generation_issued' && data?.canPrint === true,
+    invoiceStatus: 'posted',
+    finalizationStatus: String(data?.finalizationStatus ?? 'finalization_required'),
+    artifactStage: String(data?.artifactStage ?? 'none'),
+    documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard' ? data.documentKind : null,
+    canPrint: data?.canPrint === true,
+    canShare: data?.canShare === true,
+    retryAvailable: lifecycleState !== 'generation_issued',
+    reconciliationRequired: false,
+    qrCode: data?.canPrint === true && typeof data?.qrCode === 'string' ? data.qrCode : null,
+    error: typeof data?.error === 'string' ? data.error : null,
+  }
+}
+
 export async function getInvoiceZatcaOutputState(params: {
   invoiceId: string
   branchId: string
