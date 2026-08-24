@@ -427,7 +427,38 @@ export default function InvoicesPage() {
 
         if (cancelled) return
 
-        const invoices = data ?? []
+        const invoices = [...(data ?? [])]
+        // A Credit Note is issued on its own date, but the original invoice
+        // must remain visible when the selected history window contains the
+        // note.  Load that immutable parent as context without changing the
+        // reporting/date semantics of either document.
+        const relatedParentIds = Array.from(new Set(
+          invoices
+            .filter((invoice: any) => invoice.zatca_invoice_type === 'credit_note' && invoice.original_invoice_id)
+            .map((invoice: any) => invoice.original_invoice_id),
+        ))
+        if (relatedParentIds.length > 0) {
+          const { data: relatedParents, error: relatedParentsError } = await supabase
+            .from('invoices')
+            .select(`
+              id, branch_id, session_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status, is_demo,
+              subtotal, tax_amount, total_amount, payment_method, payment_status, zatca_status,
+              fiscal_regime_at_issue, fiscal_lifecycle_state,
+              customers(name),
+              invoice_items(id, quantity),
+              payments(method)
+            `)
+            .eq('tenant_id', tid)
+            .eq('branch_id', activeScope.branchId)
+            .in('id', relatedParentIds)
+          if (!relatedParentsError) {
+            const existingIds = new Set(invoices.map((invoice: any) => invoice.id))
+            for (const parent of relatedParents ?? []) {
+              if (!existingIds.has(parent.id)) invoices.push(parent)
+            }
+            invoices.sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+          }
+        }
         const customerCreditInvoiceIds = new Set<string>()
         const { data: creditOperations } = await (supabase as any)
           .from('customer_receivable_operations')

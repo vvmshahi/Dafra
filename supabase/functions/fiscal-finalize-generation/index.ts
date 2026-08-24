@@ -139,7 +139,6 @@ Deno.serve(async req => {
         return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 422)
       }
       const issued = invoice.fiscal_lifecycle_state === 'generation_issued'
-      const stored = operation?.fiscal_result && typeof operation.fiscal_result === 'object' ? operation.fiscal_result : {}
       return response({
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoice_number,
@@ -149,7 +148,10 @@ Deno.serve(async req => {
         finalizationStatus: issued ? 'generation_issued' : operation?.state === 'failed' ? 'finalization_failed' : 'finalization_required',
         canPrint: issued && Boolean(invoice.fiscal_qr_payload),
         canShare: issued && Boolean(invoice.fiscal_qr_payload),
-        qrCode: issued ? (typeof stored.qrCode === 'string' ? stored.qrCode : invoice.fiscal_qr_payload) : null,
+        // Reopened documents must use the immutable invoice artifact. The
+        // operation result is only an issuance response/cache and is not the
+        // canonical read source for an existing fiscal document.
+        qrCode: issued ? invoice.fiscal_qr_payload : null,
         error: operation?.state === 'failed' ? operation.error_code : null,
       })
     }

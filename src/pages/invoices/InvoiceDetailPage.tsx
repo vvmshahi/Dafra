@@ -199,7 +199,9 @@ export default function InvoiceDetailPage() {
 
   const nonFiscalDemo = invoice?.is_demo === true
   const sandboxDocument = isSandboxFiscalDocument(invoice, branch)
-  const generationDocument = branch?.fiscal_regime === 'generation'
+  // Historical documents keep the regime that was persisted at issue. The
+  // current branch regime must not reroute an older Integration document.
+  const generationDocument = invoice?.fiscal_regime_at_issue === 'generation'
   const fiscalLifecycleState = (invoice as (Invoice & { fiscal_lifecycle_state?: string | null }) | null)?.fiscal_lifecycle_state ?? null
   const generationIssued = generationDocument && fiscalLifecycleState === 'generation_issued'
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)

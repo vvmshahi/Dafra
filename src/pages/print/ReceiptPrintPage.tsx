@@ -12,7 +12,7 @@ import { INVOICE_SAFE_SELECT } from '@/lib/invoices/invoiceReadContract'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { selectStoredInvoiceQr } from '@/lib/zatca/qrSelector'
 import { selectStoredOutputStateQr, type QrDisplayStatus } from '@/lib/zatca/qrDisplay.mjs'
-import { type ZatcaOutputState } from '@/lib/zatca/submission'
+import { getGenerationInvoiceOutputState, type ZatcaFinalizationResult, type ZatcaOutputState } from '@/lib/zatca/submission'
 import { isSandboxFiscalDocument } from '@/lib/zatca/fiscalDocumentScope'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import { RECEIPT_FRAME_FAILED, RECEIPT_FRAME_READY } from '@/lib/receiptPrint'
@@ -206,6 +206,7 @@ export default function ReceiptPrintPage() {
   const [qrStatus, setQrStatus] = useState<QrDisplayStatus>('loading')
   const [qrRetryVersion, setQrRetryVersion] = useState(0)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
+  const [generationOutput, setGenerationOutput] = useState<ZatcaFinalizationResult | null>(null)
   const [outputState, setOutputState] = useState<ZatcaOutputState | null>(null)
   const [originalDocumentLanguage, setOriginalDocumentLanguage] = useState<string | null>(null)
   const nonFiscalDemo = invoice?.is_demo === true
@@ -214,12 +215,18 @@ export default function ReceiptPrintPage() {
       || sandboxValidation?.status === 'sandbox_validated_with_warnings')
   const outputStateMatchesInvoice = Boolean(invoice && outputState?.invoiceId === invoice.id)
   const sandboxDocument = isSandboxFiscalDocument(invoice, branch)
+  // Reopened documents are routed by their persisted issue regime, never by
+  // the branch's current regime. Generation output is the stored fiscal QR
+  // contract, not the Integration/ZATCA output-state contract.
+  const generationDocument = invoice?.fiscal_regime_at_issue === 'generation'
   const selectedQrPayload = sandboxDocument
     ? selectStoredInvoiceQr(null, 'sandbox', {
       sandboxGenerated: sandboxValidated && Boolean(sandboxValidation?.qrCode),
       sandboxQrCode: sandboxValidation?.qrCode,
     })
-    : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
+    : generationDocument
+      ? generationOutput?.canPrint ? generationOutput.qrCode : null
+      : selectStoredOutputStateQr(outputStateMatchesInvoice ? outputState : null)
   const documentViewModel = useMemo(() => {
     if (!invoice || !branch || !tenant) return null
     return documentFromStoredInvoice({
@@ -233,7 +240,18 @@ export default function ReceiptPrintPage() {
     })
   }, [invoice, branch, tenant, items, payments, customerCredit, outputStateMatchesInvoice, outputState?.documentKind])
   const fiscalDocumentRenderable = documentViewModel ? canRenderFiscalDocument(documentViewModel) : false
-  const documentReadiness = resolveIssuedDocumentReadiness({ modelReady: Boolean(invoice && branch && tenant && fiscalDocumentRenderable), nonFiscalDemo, outputCanPrint: sandboxDocument ? sandboxValidated : outputStateMatchesInvoice && outputState?.canPrint === true, qrPayload: selectedQrPayload, qrStatus, qrDataUrl })
+  const documentReadiness = resolveIssuedDocumentReadiness({
+    modelReady: Boolean(invoice && branch && tenant && fiscalDocumentRenderable),
+    nonFiscalDemo,
+    outputCanPrint: sandboxDocument
+      ? sandboxValidated
+      : generationDocument
+        ? generationOutput?.canPrint === true
+        : outputStateMatchesInvoice && outputState?.canPrint === true,
+    qrPayload: selectedQrPayload,
+    qrStatus,
+    qrDataUrl,
+  })
   const printReady = documentReadiness.printable
 
   useReceiptPrintStyle(receiptProfile, electronPrint)
@@ -258,8 +276,19 @@ export default function ReceiptPrintPage() {
 
   useEffect(() => {
     if (!invoice || !branch || nonFiscalDemo || sandboxDocument) {
+      setGenerationOutput(null)
       setOutputState(null)
       return
+    }
+    if (generationDocument) {
+      let cancelled = false
+      setGenerationOutput(null)
+      setOutputState(null)
+      setQrStatus('loading')
+      getGenerationInvoiceOutputState({ invoiceId: invoice.id, branchId: invoice.branch_id })
+        .then(state => { if (!cancelled) { setGenerationOutput(state); setQrStatus(state.canPrint ? 'loading' : 'failed') } })
+        .catch(() => { if (!cancelled) { setGenerationOutput(null); setQrStatus('failed') } })
+      return () => { cancelled = true }
     }
     let cancelled = false
     setOutputState(null)
@@ -273,7 +302,7 @@ export default function ReceiptPrintPage() {
         }
       })
     return () => { cancelled = true }
-  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, branch, nonFiscalDemo, sandboxDocument, qrRetryVersion])
+  }, [invoice?.id, invoice?.branch_id, invoice?.zatca_status, branch, nonFiscalDemo, sandboxDocument, generationDocument, qrRetryVersion])
 
   useEffect(() => {
     if (!invoiceId) return
@@ -345,7 +374,7 @@ export default function ReceiptPrintPage() {
         return
       }
       const environment = isSandboxFiscalDocument(invoice!, branch!) ? 'sandbox' : 'production'
-      if (environment === 'production' && !outputStateMatchesInvoice) return
+      if (environment === 'production' && !generationDocument && !outputStateMatchesInvoice) return
       if (environment === 'sandbox' && sandboxValidation?.invoiceId !== invoice!.id) return
 
       setQrStatus('loading')
@@ -366,7 +395,7 @@ export default function ReceiptPrintPage() {
 
     generateQR()
     return () => { cancelled = true }
-  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice, qrRetryVersion])
+  }, [invoice, branch, tenant, sandboxValidation?.invoiceId, selectedQrPayload, outputStateMatchesInvoice, generationDocument, generationOutput?.canPrint, qrRetryVersion])
 
   useEffect(() => {
     if (!autoPrint || embeddedPrint || electronPrint || printedRef.current || loading || error || !invoice || !branch || !printReady) return
