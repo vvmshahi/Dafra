@@ -122,6 +122,12 @@ export interface ZatcaFinalizationResult {
   correlationId?: string | null
 }
 
+export interface GenerationCreditNoteResult extends ZatcaFinalizationResult {
+  invoiceId: string
+  invoiceNumber: string
+  idempotentReplay: boolean
+}
+
 interface GenerationFinalizerDiagnostic {
   error: string | null
   failureStage: string | null
@@ -433,6 +439,64 @@ export async function finalizeGenerationInvoice(params: {
     error: typeof data?.error === 'string' ? data.error : null,
     failureStage: typeof data?.failure_stage === 'string' ? data.failure_stage : null,
     correlationId: typeof data?.correlation_id === 'string' ? data.correlation_id : null,
+  }
+}
+
+/**
+ * Creates and finalizes a Generation Credit Note through the B3 server path.
+ * The Edge function resolves the parent, branch regime, policy revision, and
+ * full-parent restriction from persisted rows; this client payload is only a
+ * request, never an eligibility override.
+ */
+export async function createGenerationCreditNote(params: {
+  parentInvoiceId: string
+  branchId: string
+  reason: string
+  returnStock: boolean
+  checkoutIdempotencyKey: string
+  expectedPolicyRevision: number
+}): Promise<GenerationCreditNoteResult> {
+  const { data, error } = await supabase.functions.invoke('fiscal-finalize-generation', {
+    body: {
+      parent_invoice_id: params.parentInvoiceId,
+      branch_id: params.branchId,
+      note_type: 'credit_note',
+      reason: params.reason,
+      return_stock: params.returnStock,
+      checkout_idempotency_key: params.checkoutIdempotencyKey,
+      expected_policy_revision: params.expectedPolicyRevision,
+    },
+  })
+  if (error) {
+    const diagnostic = await readGenerationFinalizerDiagnostic(error)
+    const failure = new Error(diagnostic.error ?? error.message) as GenerationFinalizerError
+    failure.name = 'GenerationFinalizerError'
+    failure.failureStage = diagnostic.failureStage
+    failure.correlationId = diagnostic.correlationId
+    throw failure
+  }
+  const invoiceId = typeof data?.invoiceId === 'string' ? data.invoiceId : ''
+  const invoiceNumber = typeof data?.invoiceNumber === 'string' ? data.invoiceNumber : ''
+  if (!invoiceId || !invoiceNumber || data?.lifecycleState !== 'generation_issued' || data?.canPrint !== true) {
+    throw new Error(String(data?.error ?? 'Generation Credit Note finalization requires attention.'))
+  }
+  return {
+    invoiceId,
+    invoiceNumber,
+    idempotentReplay: data?.idempotentReplay === true,
+    ok: true,
+    invoiceStatus: 'posted',
+    finalizationStatus: 'generation_issued',
+    artifactStage: String(data?.artifactStage ?? 'generation_final'),
+    documentKind: data?.documentKind === 'standard' || data?.documentKind === 'simplified'
+      ? data.documentKind
+      : null,
+    canPrint: true,
+    canShare: data?.canShare === true,
+    retryAvailable: false,
+    reconciliationRequired: false,
+    qrCode: typeof data?.qrCode === 'string' ? data.qrCode : null,
+    error: null,
   }
 }
 

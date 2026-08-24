@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
+import { resolveCreditNoteEligibility } from '@/lib/fiscal/domain'
 import {
   formatSaudiDate,
   formatSaudiDateTime,
@@ -46,11 +47,11 @@ type OwnerInvoiceBranch = {
   name: string
   name_ar: string | null
   fiscal_regime?: 'generation' | 'integration'
+  fiscal_policy_revision?: number
 }
 
-function isGenerationInvoice(row: InvoiceRow, branches: OwnerInvoiceBranch[]): boolean {
+function isGenerationInvoice(row: InvoiceRow, _branches: OwnerInvoiceBranch[]): boolean {
   return row.fiscalRegimeAtIssue === 'generation'
-    || branches.find(branch => branch.id === row.branchId)?.fiscal_regime === 'generation'
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,18 +147,25 @@ function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefin
   if (row.documentType === 'credit_note') return t('invoices:creditNotesCannotBeCredited')
   if (row.status === 'cancelled') return t('invoices:cancelledCannotCredit')
   if (row.status !== 'posted') return t('invoices:postedOnly')
-  if (row.fiscalRegimeAtIssue === 'generation' && row.fiscalLifecycleState === 'generation_issued') {
-    if (currentFiscalRegime === 'integration') return t('invoices:crossRegimeNoteNotAllowed')
-    if (role && !['owner', 'branch'].includes(role)) return t('validation:creditPermissionDenied')
-    if (row.creditStatus === 'full' || row.remainingRefundableQuantity <= 0) return t('invoices:fullyCreditedReason')
-    return null
-  }
   const submitted = row.displayZatcaStatus === 'sandbox_validated' ||
     row.displayZatcaStatus === 'sandbox_validated_with_warnings' ||
     row.zatcaStatus === 'reported' || row.zatcaStatus === 'cleared'
-  if (!submitted) return row.displayZatcaStatus.startsWith('sandbox_')
-    ? t('invoices:submitBeforeCredit')
-    : t('invoices:reportedOnly')
+  const eligibility = resolveCreditNoteEligibility({
+    parentRegime: row.fiscalRegimeAtIssue ?? 'integration',
+    parentLifecycle: row.fiscalLifecycleState,
+    currentRegime: currentFiscalRegime === 'generation' || currentFiscalRegime === 'integration'
+      ? currentFiscalRegime
+      : null,
+    integrationAccepted: submitted,
+  })
+  if (!eligibility.allowed) {
+    if (eligibility.code === 'CROSS_REGIME_NOTE_NOT_ALLOWED') return t('invoices:crossRegimeNoteNotAllowed')
+    if (eligibility.code === 'GENERATION_FINALIZATION_REQUIRED') return t('invoices:generationCreditFinalizationRequired')
+    if (eligibility.code === 'FISCAL_POLICY_INVALID') return t('invoices:fiscalPolicyInvalidForCredit')
+    return row.displayZatcaStatus.startsWith('sandbox_')
+      ? t('invoices:submitBeforeCredit')
+      : t('invoices:reportedOnly')
+  }
   if (role && !['owner', 'branch'].includes(role)) return t('validation:creditPermissionDenied')
   if (row.creditStatus === 'full' || row.remainingRefundableQuantity <= 0) return t('invoices:fullyCreditedReason')
   return null
@@ -281,7 +289,7 @@ export default function InvoicesPage() {
     ;(async () => {
       const { data, error } = await supabase
         .from('branches')
-        .select('id, name, name_ar, fiscal_regime')
+        .select('id, name, name_ar, fiscal_regime, fiscal_policy_revision')
         .eq('tenant_id', profile.tenant_id)
         .order('name')
       if (cancelled) return
@@ -1247,6 +1255,10 @@ export default function InvoicesPage() {
           total_amount: creditModalRow.totalAmount,
           invoice_date: creditModalRow.date,
           customer_name: creditModalRow.customerName,
+          fiscal_regime_at_issue: creditModalRow.fiscalRegimeAtIssue,
+          fiscal_lifecycle_state: creditModalRow.fiscalLifecycleState,
+          current_branch_fiscal_regime: ownerBranches.find(branch => branch.id === creditModalRow.branchId)?.fiscal_regime ?? null,
+          current_branch_policy_revision: ownerBranches.find(branch => branch.id === creditModalRow.branchId)?.fiscal_policy_revision ?? null,
           zatca_document_kind: creditModalRow.documentType === 'standard'
             ? 'standard'
             : 'simplified',
@@ -1275,6 +1287,8 @@ export default function InvoicesPage() {
               displayZatcaStatus: demoStatus,
               status: 'posted',
               documentType: 'credit_note',
+              fiscalRegimeAtIssue: result.fiscalRegimeAtIssue,
+              fiscalLifecycleState: result.fiscalLifecycleState,
               invoiceReference: result.originalInvoiceNumber,
               linkedCreditNoteId: null,
               linkedCreditNoteNumber: null,

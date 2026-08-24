@@ -12,10 +12,25 @@ export function creditNotePresentationState(input) {
   const finalizationStatus = String(input?.finalizationStatus ?? '')
   const invoiceStatus = String(input?.invoiceStatus ?? '')
   const reportingDisplayState = String(input?.reportingDisplayState ?? '')
+  const generation = input?.fiscalRegimeAtIssue === 'generation'
   const documentKind = input?.documentKind === 'standard'
       || artifactStage.startsWith('standard_')
     ? 'standard'
     : 'simplified'
+
+  if (generation) {
+    return {
+      documentKind,
+      state: 'generation_issued',
+      tone: 'success',
+      headingKey: 'creditNotes:created',
+      messageKey: null,
+      statusKey: 'creditNotes:generationNotRequired',
+      printAllowed: input?.canPrint === true,
+      localCreationAcknowledged: true,
+      finalSuccess: true,
+    }
+  }
 
   if (documentKind === 'standard') {
     const cleared = input?.canPrint === true

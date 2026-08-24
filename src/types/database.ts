@@ -1226,6 +1226,10 @@ export interface Invoice {
   zatca_simplified_qr?: string | null
   zatca_cleared_qr?: string | null
   zatca_status: ZatcaStatus
+  fiscal_regime_at_issue?: 'generation' | 'integration' | null
+  fiscal_lifecycle_state?: string | null
+  fiscal_artifact_stage?: string | null
+  fiscal_policy_revision_at_issue?: number | null
   zatca_submission_id: string | null
   zatca_submitted_at: string | null
   zatca_clearance_status: string | null

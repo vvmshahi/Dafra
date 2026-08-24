@@ -22,6 +22,7 @@ import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDoc
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
+import { resolveCreditNoteEligibility } from '@/lib/fiscal/domain'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
@@ -804,20 +805,32 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     : 'text-gray-600 bg-gray-50 border-gray-100'
   const demoSandbox = sandboxDocument
   const canIssueCreditNote = profile?.role === 'owner' || profile?.role === 'branch'
+  const creditEligibility = resolveCreditNoteEligibility({
+    parentRegime: invoice.fiscal_regime_at_issue ?? 'integration',
+    parentLifecycle: invoice.fiscal_lifecycle_state,
+    currentRegime: branch?.fiscal_regime ?? null,
+    integrationAccepted: sandboxValidated || invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared',
+  })
   const canCreateCreditNote = !isCreditNote
     && canIssueCreditNote
     && !isCancelled
     && invoice.status === 'posted'
-    && (sandboxValidated || invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
+    && creditEligibility.allowed
     && totalRemainingQuantity > 0.0005
   const creditDisabledReason = isCreditNote
     ? t('invoices:creditNotesCannotBeCredited')
     : invoice.status !== 'posted'
     ? t('invoices:postedOnly')
-    : !(sandboxValidated || invoice.zatca_status === 'reported' || invoice.zatca_status === 'cleared')
-    ? demoSandbox ? t('invoices:submitBeforeCredit') : t('invoices:reportedOnly')
     : isCancelled
     ? t('invoices:cancelledCannotCredit')
+    : !creditEligibility.allowed
+    ? creditEligibility.code === 'CROSS_REGIME_NOTE_NOT_ALLOWED'
+      ? t('invoices:crossRegimeNoteNotAllowed')
+      : creditEligibility.code === 'GENERATION_FINALIZATION_REQUIRED'
+      ? t('invoices:generationCreditFinalizationRequired')
+      : creditEligibility.code === 'FISCAL_POLICY_INVALID'
+      ? t('invoices:fiscalPolicyInvalidForCredit')
+      : demoSandbox ? t('invoices:submitBeforeCredit') : t('invoices:reportedOnly')
     : totalOriginalQuantity <= 0
     ? t('invoices:refundableUnavailable')
     : creditStatus === 'full' || totalRemainingQuantity <= 0.0005
@@ -1086,6 +1099,10 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           total_amount: Number(invoice.total_amount),
           invoice_date: invoice.invoice_date ?? invoice.created_at,
           customer_name: customer?.name ?? null,
+          fiscal_regime_at_issue: invoice.fiscal_regime_at_issue,
+          fiscal_lifecycle_state: invoice.fiscal_lifecycle_state,
+          current_branch_fiscal_regime: branch?.fiscal_regime ?? null,
+          current_branch_policy_revision: branch?.fiscal_policy_revision ?? null,
           zatca_document_kind: outputState?.documentKind === 'standard'
             || invoice.zatca_invoice_type === 'standard'
             ? 'standard'

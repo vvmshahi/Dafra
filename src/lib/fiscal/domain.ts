@@ -54,6 +54,46 @@ export const FISCAL_POLICY_ERRORS = Object.freeze({
   crossRegimeNote: 'CROSS_REGIME_NOTE_NOT_ALLOWED',
 } as const)
 
+export const CREDIT_NOTE_POLICY_ERRORS = Object.freeze({
+  generationFinalizationRequired: 'GENERATION_FINALIZATION_REQUIRED',
+  integrationNotAccepted: 'INTEGRATION_NOT_ACCEPTED',
+} as const)
+
+export type CreditNoteEligibility =
+  | { allowed: true; regime: FiscalRegime }
+  | { allowed: false; code: typeof FISCAL_POLICY_ERRORS.crossRegimeNote | typeof FISCAL_POLICY_ERRORS.invalid | typeof CREDIT_NOTE_POLICY_ERRORS.generationFinalizationRequired | typeof CREDIT_NOTE_POLICY_ERRORS.integrationNotAccepted }
+
+/**
+ * Client-side presentation contract for the server-authoritative credit-note
+ * policy. The Generation finalizer and the Integration credit RPC re-check all
+ * of these fields from persisted rows before creating anything.
+ */
+export function resolveCreditNoteEligibility(input: {
+  parentRegime: FiscalRegime | null | undefined
+  parentLifecycle: string | null | undefined
+  currentRegime: FiscalRegime | null | undefined
+  integrationAccepted: boolean
+}): CreditNoteEligibility {
+  if (input.parentRegime === 'generation') {
+    if (input.currentRegime === 'integration') {
+      return { allowed: false, code: FISCAL_POLICY_ERRORS.crossRegimeNote }
+    }
+    if (input.currentRegime !== 'generation') {
+      return { allowed: false, code: FISCAL_POLICY_ERRORS.invalid }
+    }
+    if (input.parentLifecycle !== 'generation_issued') {
+      return { allowed: false, code: CREDIT_NOTE_POLICY_ERRORS.generationFinalizationRequired }
+    }
+    return { allowed: true, regime: 'generation' }
+  }
+
+  if (input.parentRegime === 'integration' && input.currentRegime !== 'integration') {
+    return { allowed: false, code: FISCAL_POLICY_ERRORS.invalid }
+  }
+  if (input.integrationAccepted) return { allowed: true, regime: 'integration' }
+  return { allowed: false, code: CREDIT_NOTE_POLICY_ERRORS.integrationNotAccepted }
+}
+
 export function isGenerationIssued(document: FiscalDocumentForPolicy): boolean {
   return document.fiscalRegime === 'generation'
     && document.lifecycleState === 'generation_issued'

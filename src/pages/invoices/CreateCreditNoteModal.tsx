@@ -17,10 +17,12 @@ import { supabase } from '@/lib/supabase'
 import { MoneyInput } from '@/components/ui/MoneyInput'
 import type { PaymentMethod, ZatcaStatus } from '@/types/database'
 import {
+  createGenerationCreditNote,
   getInvoiceZatcaOutputState,
   isPermanentDemoSandboxBranch,
   submitInvoiceForBranch,
 } from '@/lib/zatca/submission'
+import { resolveCreditNoteEligibility } from '@/lib/fiscal/domain'
 import {
   atomicCheckoutFingerprint,
   checkoutSimplifiedAtomically,
@@ -45,6 +47,10 @@ export interface CreditNoteSourceInvoice {
   zatca_document_kind: 'simplified' | 'standard'
   invoice_date?: string | null
   customer_name?: string | null
+  fiscal_regime_at_issue?: 'generation' | 'integration' | null
+  fiscal_lifecycle_state?: string | null
+  current_branch_fiscal_regime?: 'generation' | 'integration' | null
+  current_branch_policy_revision?: number | null
 }
 
 export interface CreditNoteCreatedResult {
@@ -71,6 +77,8 @@ export interface CreditNoteCreatedResult {
   canPrint: boolean
   retryAvailable: boolean
   reconciliationRequired: boolean
+  fiscalRegimeAtIssue: 'generation' | 'integration'
+  fiscalLifecycleState: string
   atomicReceipt?: AtomicReceiptPayload
 }
 
@@ -169,6 +177,9 @@ interface CreditNoteOutputState {
 
 function safeCreditNoteError(error: unknown, t: TFunction): string {
   const message = typeof (error as any)?.message === 'string' ? (error as any).message : ''
+  if (/CROSS_REGIME_NOTE_NOT_ALLOWED/.test(message)) return t('invoices:crossRegimeNoteNotAllowed')
+  if (/GENERATION_FINALIZATION_REQUIRED|GENERATION_VALIDATION_FAILED/.test(message)) return t('invoices:generationCreditFinalizationRequired')
+  if (/FISCAL_POLICY_INVALID/.test(message)) return t('invoices:fiscalPolicyInvalidForCredit')
   if (/select at least one|no items/i.test(message)) return t('validation:creditNoteChooseItem')
   if (/invalid returned quantity|quantity.*greater than zero/i.test(message)) return t('validation:returnQuantityPositive')
   if (/unsupported decimal precision|exact valid base quantity|invalid package fraction/i.test(message)) {
@@ -179,7 +190,7 @@ function safeCreditNoteError(error: unknown, t: TFunction): string {
   if (/duplicate/i.test(message)) return t('validation:returnItemDuplicate')
   if (/refunds cannot exceed|payment total/i.test(message)) return t('validation:refundExceedsPayment')
   if (/stock return failed/i.test(message)) return t('validation:stockReturnFailed')
-  if (/reported|cleared/i.test(message)) return t('validation:creditInvoiceStatus')
+  if (/reported|cleared|successfully demo-submitted/i.test(message)) return t('validation:creditInvoiceStatus')
   if (/posted/i.test(message)) return t('validation:creditPostedOnly')
   if (/reason/i.test(message)) return t('validation:creditReasonRequired')
   if (/session has expired|authenticated session is required/i.test(message)) return t('validation:sessionExpired')
@@ -454,6 +465,15 @@ export default function CreateCreditNoteModal({
     businessType: tenant?.business_type,
     stockEnabled: branch?.stock_enabled,
   })
+  const currentBranchFiscalRegime = invoice?.current_branch_fiscal_regime ?? branch?.fiscal_regime ?? null
+  const generationCreditEligibility = resolveCreditNoteEligibility({
+    parentRegime: invoice?.fiscal_regime_at_issue,
+    parentLifecycle: invoice?.fiscal_lifecycle_state,
+    currentRegime: currentBranchFiscalRegime,
+    integrationAccepted: false,
+  })
+  const generationCreditEligible = generationCreditEligibility.allowed
+    && generationCreditEligibility.regime === 'generation'
   dirtyRef.current = creditScope !== ''
     || selectedReason !== ''
     || remarks !== ''
@@ -490,7 +510,7 @@ export default function CreateCreditNoteModal({
     setOriginalPayments([])
     setRefundableItems([])
     setReturnQuantities({})
-    setCreditScope('')
+    setCreditScope(generationCreditEligible ? 'full' : '')
     setFullItemsExpanded(false)
     setDiscardConfirmOpen(false)
     setPaymentsLoading(true)
@@ -628,6 +648,10 @@ export default function CreateCreditNoteModal({
     invoice?.invoice_number,
     invoice?.total_amount,
     invoice?.zatca_document_kind,
+    invoice?.fiscal_regime_at_issue,
+    invoice?.fiscal_lifecycle_state,
+    invoice?.current_branch_fiscal_regime,
+    generationCreditEligible,
   ])
 
   useEffect(() => {
@@ -707,6 +731,9 @@ export default function CreateCreditNoteModal({
         : line.quantity
     ), 0)
   const hasEligibleStockLines = stockEnabled && stockReturnQuantity > 0
+  const generationRefundPlanReady = !paymentsLoading
+    && originalPayments.some(payment => payment.amount > 0)
+    && totals.total > 0
 
   useEffect(() => {
     if (!hasEligibleStockLines) setStockReturnChoice(null)
@@ -743,6 +770,18 @@ export default function CreateCreditNoteModal({
 
     const lines = selectedLines
 
+    if (generationCreditEligible) {
+      const remainingLines = refundableItems.filter(item => item.remaining_quantity > 0.0005)
+      const fullParentSelected = creditScope === 'full'
+        && lines.length === remainingLines.length
+        && lines.every(line => Math.abs(line.quantity - line.item.remaining_quantity) <= 0.0005)
+      if (!fullParentSelected) {
+        setError(t('invoices:generationCreditFullParentOnly'))
+        itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+      }
+    }
+
     if (lines.length === 0) {
       setError(t('validation:returnQuantityRequired'))
       itemsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -777,22 +816,27 @@ export default function CreateCreditNoteModal({
       return
     }
 
-    if (!refundMode) {
+    if (!generationCreditEligible && !refundMode) {
       setError(t('creditNotes:refundMethodRequired'))
       refundSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       refundSectionRef.current?.querySelector<HTMLElement>('[role="radio"]')?.focus()
       return
     }
-    const cashRefund = refundMode === 'card' ? 0 : Number(refundCash || 0)
-    const cardRefund = refundMode === 'cash' ? 0 : Number(refundCard || 0)
+    if (generationCreditEligible && !generationRefundPlanReady) {
+      setError(t('creditNotes:generationOriginalRefundUnavailable'))
+      refundSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    const cashRefund = generationCreditEligible ? 0 : refundMode === 'card' ? 0 : Number(refundCash || 0)
+    const cardRefund = generationCreditEligible ? 0 : refundMode === 'cash' ? 0 : Number(refundCard || 0)
     const refundTotal = cashRefund + cardRefund
-    if (cashRefund < 0 || cardRefund < 0 || refundTotal <= 0 || Math.abs(refundTotal - totals.total) > 0.01) {
+    if (!generationCreditEligible && (cashRefund < 0 || cardRefund < 0 || refundTotal <= 0 || Math.abs(refundTotal - totals.total) > 0.01)) {
       setError(t('validation:refundAllocationMismatch'))
       refundSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       refundSectionRef.current?.querySelector<HTMLInputElement>('input')?.focus()
       return
     }
-    const refundAllocations = [
+    const refundAllocations = generationCreditEligible ? [] : [
       cashRefund > 0 ? { method: 'cash', amount: roundMoney(cashRefund) } : null,
       cardRefund > 0 ? { method: 'bank_transfer', amount: roundMoney(cardRefund) } : null,
     ].filter(Boolean)
@@ -818,10 +862,37 @@ export default function CreateCreditNoteModal({
       const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, invoice.branch_id)
       const atomicSimplifiedCreditEligible = !demoSandbox
         && invoice.zatca_document_kind === 'simplified'
+      let usedGenerationCredit = false
       let usedAtomicSimplifiedCredit = false
       let atomicReceipt: AtomicReceiptPayload | undefined
       let result: RpcCreditNoteResult | null = null
-      if (atomicSimplifiedCreditEligible) {
+      let generationFinalization: Awaited<ReturnType<typeof createGenerationCreditNote>> | null = null
+      if (generationCreditEligible) {
+        const policyRevision = invoice.current_branch_policy_revision ?? branch?.fiscal_policy_revision
+        if (policyRevision == null || currentBranchFiscalRegime !== 'generation') {
+          throw new Error('FISCAL_POLICY_INVALID')
+        }
+        generationFinalization = await createGenerationCreditNote({
+          parentInvoiceId: originalInvoiceId,
+          branchId: invoice.branch_id,
+          reason: finalReason,
+          returnStock: hasEligibleStockLines ? stockReturnChoice === true : false,
+          checkoutIdempotencyKey: idempotencyKey || newIdempotencyKey(originalInvoiceId),
+          expectedPolicyRevision: Number(policyRevision),
+        })
+        usedGenerationCredit = true
+        result = {
+          credit_note_invoice_id: generationFinalization.invoiceId,
+          credit_note_invoice_number: generationFinalization.invoiceNumber,
+          created_at: new Date().toISOString(),
+          total: totals.total,
+          refund_status: 'completed',
+          zatca_status: 'pending',
+          refund_method: originalPayments.length === 1 ? originalPayments[0].method : 'other',
+          idempotent_replay: generationFinalization.idempotentReplay,
+        }
+      }
+      if (!usedGenerationCredit && atomicSimplifiedCreditEligible) {
         cleanupObsoleteCreditNotePendingCheckouts()
         const pendingInspection = inspectPendingAtomicCheckout(
           invoice.branch_id,
@@ -916,7 +987,18 @@ export default function CreateCreditNoteModal({
       const creditNoteId = result.credit_note_invoice_id
       let zatcaStatus = result.zatca_status ?? 'pending'
       let autoSubmitSucceeded = false
-      let outputState: CreditNoteOutputState = atomicReceipt
+      let outputState: CreditNoteOutputState = generationFinalization
+        ? {
+          documentKind: invoice.zatca_document_kind,
+          invoiceStatus: 'posted',
+          finalizationStatus: generationFinalization.finalizationStatus,
+          artifactStage: generationFinalization.artifactStage,
+          reportingDisplayState: 'not_required',
+          canPrint: generationFinalization.canPrint,
+          retryAvailable: false,
+          reconciliationRequired: false,
+        }
+        : atomicReceipt
         ? {
           documentKind: 'simplified' as const,
           invoiceStatus: result.zatca_status ?? 'pending',
@@ -943,7 +1025,7 @@ export default function CreateCreditNoteModal({
           retryAvailable: true,
           reconciliationRequired: false,
         }
-      const shouldAutoSubmit = !usedAtomicSimplifiedCredit
+      const shouldAutoSubmit = !usedGenerationCredit && !usedAtomicSimplifiedCredit
         && zatcaStatus !== 'reported'
         && zatcaStatus !== 'cleared'
 
@@ -1013,7 +1095,7 @@ export default function CreateCreditNoteModal({
         }
       }
 
-      if (!usedAtomicSimplifiedCredit && !demoSandbox) {
+      if (!usedGenerationCredit && !usedAtomicSimplifiedCredit && !demoSandbox) {
         try {
           const authoritative = await getInvoiceZatcaOutputState({
             invoiceId: creditNoteId,
@@ -1063,6 +1145,8 @@ export default function CreateCreditNoteModal({
         canPrint: outputState.canPrint,
         retryAvailable: outputState.retryAvailable,
         reconciliationRequired: outputState.reconciliationRequired,
+        fiscalRegimeAtIssue: generationFinalization ? 'generation' : 'integration',
+        fiscalLifecycleState: generationFinalization?.finalizationStatus ?? 'not_submitted',
         atomicReceipt,
       }
       onCreated(createdResult)
@@ -1095,13 +1179,15 @@ export default function CreateCreditNoteModal({
   const busy = creating || submitting
   const actionLabel = submitting ? t('creditNotes:submitting') : creating ? t('creditNotes:creating') : t('creditNotes:create')
   const stockReturnChoiceMissing = hasEligibleStockLines && stockReturnChoice === null
-  const refundAllocationValid = refundMode !== ''
-    && totals.total > 0
-    && Math.abs(
-      (refundMode === 'card' ? 0 : Number(refundCash || 0))
-      + (refundMode === 'cash' ? 0 : Number(refundCard || 0))
-      - totals.total,
-    ) <= 0.01
+  const refundAllocationValid = generationCreditEligible
+    ? generationRefundPlanReady
+    : refundMode !== ''
+      && totals.total > 0
+      && Math.abs(
+        (refundMode === 'card' ? 0 : Number(refundCash || 0))
+        + (refundMode === 'cash' ? 0 : Number(refundCard || 0))
+        - totals.total,
+      ) <= 0.01
   const scopeComplete = creditScope === 'full'
     ? selectedLines.length > 0 && !hasInvalidQuantity
     : creditScope === 'selected' && selectedLines.length > 0 && !hasInvalidQuantity
@@ -1169,15 +1255,15 @@ export default function CreateCreditNoteModal({
         <section data-testid="source-invoice-strip" className="shrink-0 border-b border-[#B5943E]/40 bg-[#0F2419] px-4 py-2.5 text-[#FFF9E8] sm:px-6"><p className="text-[10px] font-bold uppercase tracking-wider text-[#F3D98B]">{t('creditNotes:invoiceContext')}</p><dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3"><div><dt className="text-[10px] text-white/55">{t('creditNotes:invoiceNumber')}</dt><dd className="text-xs font-bold"><bdi>{invoice.invoice_number}</bdi></dd></div><div><dt className="text-[10px] text-white/55">{t('invoices:date')}</dt><dd className="text-xs font-bold"><bdi>{invoiceDate(invoice.invoice_date, isRtl)}</bdi></dd></div><div><dt className="text-[10px] text-white/55">{t('invoices:customer')}</dt><dd className="truncate text-xs font-bold" dir="auto">{invoice.customer_name || t('creditNotes:walkInCustomer')}</dd></div><div><dt className="text-[10px] text-white/55">{t('creditNotes:originalTotal')}</dt><dd className="text-xs font-bold" dir="ltr">SAR {money(invoice.total_amount)}</dd></div><div><dt className="text-[10px] text-white/55">{t('creditNotes:remainingRefundableTotal')}</dt><dd className="text-xs font-bold" dir="ltr">SAR {money(remainingRefundableTotal)}</dd></div><div><dt className="text-[10px] text-white/55">{t('creditNotes:originalPayment')}</dt><dd className="truncate text-xs font-bold">{refundPlanText(originalPayments, paymentsLoading, t)}</dd></div></dl></section>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><main className="mx-auto grid w-full max-w-5xl gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_19rem] sm:px-6">
           <div className="min-w-0 space-y-6">
-            <section ref={itemsSectionRef} className="space-y-3"><SectionHeading number="01" eyebrow={t('creditNotes:scopeStep')} title={t('creditNotes:scopeTitle')} /><div className="grid gap-2 sm:grid-cols-2">{(['full', 'selected'] as const).map(scope => <button key={scope} type="button" role="radio" aria-checked={creditScope === scope} disabled={busy || itemsLoading} onClick={() => { setCreditScope(scope); setError(null) }} className={creditScope === scope ? 'min-h-[4.5rem] rounded-xl border border-[#B5943E] bg-[#0F2419] p-3 text-start text-[#FFF9E8]' : 'min-h-[4.5rem] rounded-xl border border-slate-200 bg-white p-3 text-start text-slate-900 hover:border-[#B5943E]/60'}><span className="block text-sm font-black">{scope === 'full' ? t('creditNotes:fullRemaining') : t('creditNotes:selectedItemsScope')}</span><span className={creditScope === scope ? 'mt-1 block text-[11px] text-white/70' : 'mt-1 block text-[11px] text-slate-500'}>{scope === 'full' ? t('creditNotes:fullRemainingHint') : t('creditNotes:selectedItemsHint')}</span></button>)}</div>
+            <section ref={itemsSectionRef} className="space-y-3"><SectionHeading number="01" eyebrow={t('creditNotes:scopeStep')} title={t('creditNotes:scopeTitle')} />{generationCreditEligible && <p className="rounded-xl border border-[#B5943E]/35 bg-[#fffdf5] px-3 py-2 text-xs text-slate-600">{t('invoices:generationCreditFullParentOnly')}</p>}<div className="grid gap-2 sm:grid-cols-2">{(['full', 'selected'] as const).filter(scope => !generationCreditEligible || scope === 'full').map(scope => <button key={scope} type="button" role="radio" aria-checked={creditScope === scope} disabled={busy || itemsLoading} onClick={() => { setCreditScope(scope); setError(null) }} className={creditScope === scope ? 'min-h-[4.5rem] rounded-xl border border-[#B5943E] bg-[#0F2419] p-3 text-start text-[#FFF9E8]' : 'min-h-[4.5rem] rounded-xl border border-slate-200 bg-white p-3 text-start text-slate-900 hover:border-[#B5943E]/60'}><span className="block text-sm font-black">{scope === 'full' ? t('creditNotes:fullRemaining') : t('creditNotes:selectedItemsScope')}</span><span className={creditScope === scope ? 'mt-1 block text-[11px] text-white/70' : 'mt-1 block text-[11px] text-slate-500'}>{scope === 'full' ? t('creditNotes:fullRemainingHint') : t('creditNotes:selectedItemsHint')}</span></button>)}</div>
             {itemsLoading ? <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500"><Loader2 className="mr-2 inline animate-spin" size={15} />{t('creditNotes:loadingItems')}</div> : creditScope === 'full' ? <div className="rounded-xl border border-[#B5943E]/40 bg-[#fffdf5] p-3"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-black text-[#0F2419]">{t('creditNotes:fullRemaining')}</p><p className="mt-1 text-xs text-slate-600">{t('creditNotes:refundableLines', { count: selectedLines.length })} · {qty(selectedQuantity)}</p></div><p className="text-lg font-black text-[#0F2419]" dir="ltr">SAR {money(totals.total)}</p></div><button type="button" onClick={() => setFullItemsExpanded(value => !value)} className="mt-2 min-h-9 text-xs font-bold text-[#1B6B3A] underline underline-offset-4">{fullItemsExpanded ? t('creditNotes:hideItems') : t('creditNotes:viewItems', { count: selectedLines.length })}</button>{fullItemsExpanded && <div className="mt-2 divide-y divide-[#B5943E]/20 border-t border-[#B5943E]/20">{selectedLines.map(line => <div key={line.item.original_invoice_item_id} className="flex justify-between gap-3 py-2 text-xs"><span>{line.item.name} · {qty(line.quantity)} {line.item.unit}</span><bdi>SAR {money(line.total)}</bdi></div>)}</div>}</div> : null}
             {creditScope === 'selected' && <div className="space-y-2 border-t border-slate-200 pt-4"><div><h4 className="text-sm font-black text-slate-900">{t('creditNotes:returnedItems')}</h4><p className="text-[11px] text-slate-500">{t('creditNotes:itemSelectionHint')}</p></div>{refundableItems.filter(item => item.remaining_quantity > 0).map(item => { const line = linePreviews.find(value => value.item.original_invoice_item_id === item.original_invoice_item_id)!; const stockEligible = item.product_id && item.stock_tracked_at_sale === true && item.service_item_at_sale !== true; return <article key={item.original_invoice_item_id} className="rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h5 className="truncate text-sm font-bold text-slate-900" dir="auto">{isRtl && item.name_ar ? item.name_ar : item.name}</h5><p className="mt-1 text-[11px] text-slate-500">{t('creditNotes:originalQuantity', { quantity: qty(item.original_quantity), unit: item.unit ?? '' })} · {t('creditNotes:previouslyCreditedWithUnit', { quantity: qty(item.credited_quantity), unit: item.unit ?? '' })}</p><p className="text-[11px] font-semibold text-[#1B6B3A]">{t('creditNotes:remainingReturnableWithUnit', { quantity: qty(item.remaining_quantity), unit: item.unit ?? '' })}{stockEligible ? ' · ' + t('creditNotes:stockItem') : ''}</p></div><div className="shrink-0 text-end"><p className="text-[10px] text-slate-400">{t('creditNotes:expectedCredit')}</p><p className="font-black text-[#0F2419]" dir="ltr">SAR {money(line.total)}</p></div></div><div className="mt-3 flex items-center gap-2"><div className="flex flex-1" dir="ltr"><button type="button" onClick={() => adjustQuantity(item, -1)} disabled={busy || line.quantity <= 0} className="flex h-11 w-11 items-center justify-center rounded-s-xl border border-e-0 border-slate-200 bg-slate-50 disabled:opacity-40"><Minus size={15} /></button><input type="number" inputMode="decimal" min="0" max={item.remaining_quantity} step={quantityStepForItem(item)} data-line-id={item.original_invoice_item_id} value={returnQuantities[item.original_invoice_item_id] ?? '0'} onChange={event => { const current = returnQuantities[item.original_invoice_item_id] ?? '0'; setReturnQuantities(previous => ({ ...previous, [item.original_invoice_item_id]: normalizeQuantityInput(event.target.value, item, current) })); setError(null) }} disabled={busy} className="h-11 min-w-0 flex-1 border border-slate-200 px-2 text-center text-sm font-bold outline-none focus:border-[#1B6B3A]" /><button type="button" onClick={() => adjustQuantity(item, 1)} disabled={busy || line.quantity >= item.remaining_quantity} className="flex h-11 w-11 items-center justify-center rounded-e-xl border border-s-0 border-slate-200 bg-slate-50 disabled:opacity-40"><Plus size={15} /></button></div><button type="button" onClick={() => setReturnQuantities(previous => ({ ...previous, [item.original_invoice_item_id]: fullReturnQuantity(item) }))} className="h-11 rounded-xl border border-[#0F2419] px-3 text-[11px] font-bold text-[#0F2419]">{t('creditNotes:returnAll')}</button></div></article> })}</div>}
           </section>
           <section ref={reasonSectionRef} className="space-y-3 border-t border-slate-200 pt-5"><SectionHeading number="02" eyebrow={t('creditNotes:reasonStep')} title={t('creditNotes:reasonStepTitle')} /><div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup">{QUICK_REASONS.map(reason => <button key={reason} type="button" role="radio" aria-checked={selectedReason === reason} onClick={() => { setSelectedReason(reason); setError(null) }} disabled={busy} className={selectedReason === reason ? 'min-h-11 rounded-xl border border-[#B5943E] bg-[#0F2419] px-3 text-xs font-bold text-[#FFF9E8]' : 'min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700'}>{reasonLabel(reason)}</button>)}</div><button type="button" onClick={() => setRemarksExpanded(value => !value)} className="inline-flex min-h-9 items-center gap-1 text-xs font-bold text-[#1B6B3A]"><ChevronDown className={remarksExpanded ? 'rotate-180' : ''} size={15} />{t('creditNotes:addEmployeeRemarks')}</button>{remarksExpanded && <label className="block space-y-1.5"><span className="text-xs font-bold text-slate-700">{t('creditNotes:additionalRemarks')}</span><textarea value={remarks} onChange={event => setRemarks(event.target.value)} maxLength={430} rows={3} disabled={busy} className="input resize-y" placeholder={t('creditNotes:additionalDetails')} /><span className="text-[10px] text-slate-500">{t('creditNotes:remarksFiscalHint')}</span></label>}</section>
           {hasEligibleStockLines ? <section ref={inventorySectionRef} className="space-y-3 border-t border-slate-200 pt-5"><div><SectionHeading number="03" eyebrow={t('creditNotes:inventoryStep')} title={t('creditNotes:inventoryTreatment')} /><p className="mt-1 text-[11px] text-slate-500">{t('creditNotes:stockReturnQuestionHint')}</p></div><div className="grid gap-2 sm:grid-cols-2" role="radiogroup">{([{ value: true, icon: PackageCheck, title: t('creditNotes:stockReturnYes'), description: t('creditNotes:stockReturnYesDescription') }, { value: false, icon: PackageX, title: t('creditNotes:stockReturnNo'), description: t('creditNotes:stockReturnNoDescription') }] as const).map(option => { const Icon = option.icon; return <button key={String(option.value)} type="button" role="radio" aria-checked={stockReturnChoice === option.value} onClick={() => { setStockReturnChoice(option.value); setError(null) }} disabled={busy} className={stockReturnChoice === option.value ? 'min-h-[4.5rem] rounded-xl border border-[#B5943E] bg-[#0F2419] p-3 text-start text-[#FFF9E8]' : 'min-h-[4.5rem] rounded-xl border border-slate-200 bg-white p-3 text-start text-slate-900'}><span className="flex items-center gap-2"><Icon size={16} /><span className="text-xs font-black">{option.title}</span></span><span className={stockReturnChoice === option.value ? 'mt-1 block text-[11px] text-white/70' : 'mt-1 block text-[11px] text-slate-500'}>{option.description}</span></button> })}</div></section> : <p className="border-t border-slate-200 pt-5 text-xs text-slate-500">{t('creditNotes:noStockMovement')}</p>}
-          <section ref={refundSectionRef} className="space-y-3 border-t border-slate-200 pt-5"><SectionHeading number={hasEligibleStockLines ? '04' : '03'} eyebrow={t('creditNotes:refundStep')} title={t('creditNotes:refundStepTitle')} /><p className="rounded-xl border border-[#B5943E]/35 bg-[#fffdf5] px-3 py-2 text-xs text-slate-600"><span className="font-black text-[#0F2419]">{t('creditNotes:originalPayment')}</span><br />{refundPlanText(originalPayments, paymentsLoading, t)}</p><fieldset className="space-y-2"><legend className="text-sm font-bold text-slate-900">{t('creditNotes:chooseRefundAllocation')}</legend><div className="grid grid-cols-3 gap-2">{(['cash', 'card', 'split'] as const).map(method => <button key={method} type="button" role="radio" aria-checked={refundMode === method} onClick={() => { setRefundMode(method); if (method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') } else if (method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) } else { const cashPart = roundMoney(totals.total / 2); setRefundCash(cashPart.toFixed(2)); setRefundCard(roundMoney(totals.total - cashPart).toFixed(2)) } }} disabled={busy || totals.total <= 0} className={refundMode === method ? 'min-h-11 rounded-xl border border-[#B5943E] bg-[#0F2419] px-2 text-xs font-bold text-[#FFF9E8]' : 'min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700'}>{method === 'card' ? t('creditNotes:bankTransferRefund') : t('refunds:' + method)}</button>)}</div>{refundMode === 'split' && <div className="grid grid-cols-2 gap-3 pt-1"><label className="space-y-1"><span className="text-[11px] text-slate-500">{t('refunds:cashAmount')}</span><MoneyInput value={refundCash} onValueChange={setRefundCash} className="input" placeholder="0.00" /></label><label className="space-y-1"><span className="text-[11px] text-slate-500">{t('creditNotes:bankTransferAmount')}</span><MoneyInput value={refundCard} onValueChange={setRefundCard} className="input" placeholder="0.00" /></label></div>}</fieldset><p className="flex gap-2 text-[11px] leading-relaxed text-amber-800"><AlertCircle className="shrink-0" size={14} />{t('creditNotes:refundAllocationDisclosure')}</p></section>
+          <section ref={refundSectionRef} className="space-y-3 border-t border-slate-200 pt-5"><SectionHeading number={hasEligibleStockLines ? '04' : '03'} eyebrow={t('creditNotes:refundStep')} title={t('creditNotes:refundStepTitle')} /><p className="rounded-xl border border-[#B5943E]/35 bg-[#fffdf5] px-3 py-2 text-xs text-slate-600"><span className="font-black text-[#0F2419]">{t('creditNotes:originalPayment')}</span><br />{refundPlanText(originalPayments, paymentsLoading, t)}</p>{generationCreditEligible ? <p className="rounded-xl border border-[#B5943E]/35 bg-[#fffdf5] px-3 py-2 text-xs text-slate-600">{t('creditNotes:generationOriginalRefundAllocation')}</p> : <fieldset className="space-y-2"><legend className="text-sm font-bold text-slate-900">{t('creditNotes:chooseRefundAllocation')}</legend><div className="grid grid-cols-3 gap-2">{(['cash', 'card', 'split'] as const).map(method => <button key={method} type="button" role="radio" aria-checked={refundMode === method} onClick={() => { setRefundMode(method); if (method === 'cash') { setRefundCash(totals.total.toFixed(2)); setRefundCard('') } else if (method === 'card') { setRefundCash(''); setRefundCard(totals.total.toFixed(2)) } else { const cashPart = roundMoney(totals.total / 2); setRefundCash(cashPart.toFixed(2)); setRefundCard(roundMoney(totals.total - cashPart).toFixed(2)) } }} disabled={busy || totals.total <= 0} className={refundMode === method ? 'min-h-11 rounded-xl border border-[#B5943E] bg-[#0F2419] px-2 text-xs font-bold text-[#FFF9E8]' : 'min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700'}>{method === 'card' ? t('creditNotes:bankTransferRefund') : t('refunds:' + method)}</button>)}</div>{refundMode === 'split' && <div className="grid grid-cols-2 gap-3 pt-1"><label className="space-y-1"><span className="text-[11px] text-slate-500">{t('refunds:cashAmount')}</span><MoneyInput value={refundCash} onValueChange={setRefundCash} className="input" placeholder="0.00" /></label><label className="space-y-1"><span className="text-[11px] text-slate-500">{t('creditNotes:bankTransferAmount')}</span><MoneyInput value={refundCard} onValueChange={setRefundCard} className="input" placeholder="0.00" /></label></div>}</fieldset>}<p className="flex gap-2 text-[11px] leading-relaxed text-amber-800"><AlertCircle className="shrink-0" size={14} />{t('creditNotes:refundAllocationDisclosure')}</p></section>
           </div>
-          <aside className="h-fit space-y-3 lg:sticky lg:top-0"><div className="rounded-2xl border border-[#0F2419] bg-[#0F2419] p-4 text-[#FFF9E8]"><p className="text-[10px] font-bold uppercase tracking-wider text-[#F3D98B]">{t('creditNotes:financialSummary')}</p><div className="mt-3 space-y-2 text-xs text-white/75"><p><span className="text-[#F3D98B]">{t('creditNotes:sourceInvoice')}</span><br />{invoice.invoice_number} · {invoiceDate(invoice.invoice_date, isRtl)}</p><p><span className="text-[#F3D98B]">{t('creditNotes:creditScope')}</span><br />{creditScope === 'full' ? t('creditNotes:fullRemaining') : creditScope === 'selected' ? t('creditNotes:selectedItems', { count: selectedLines.length }) : '—'}</p><p><span className="text-[#F3D98B]">{t('creditNotes:reason')}</span><br />{selectedReason || '—'}</p><p><span className="text-[#F3D98B]">{t('creditNotes:inventoryTreatment')}</span><br />{hasEligibleStockLines ? stockReturnChoice === true ? t('creditNotes:stockReturnYes') : stockReturnChoice === false ? t('creditNotes:stockReturnNo') : '—' : t('creditNotes:noStockMovement')}</p><p><span className="text-[#F3D98B]">{t('creditNotes:refundAllocationTitle')}</span><br />{refundMode === 'split' ? t('refunds:split') : refundMode === 'card' ? t('creditNotes:bankTransferRefund') : refundMode === 'cash' ? t('refunds:cash') : '—'}</p></div><div className="mt-4 border-t border-white/15 pt-3"><div className="flex justify-between text-xs text-white/70"><span>{t('invoices:subtotal')}</span><span dir="ltr">SAR {money(totals.subtotal)}</span></div><div className="mt-1 flex justify-between text-xs text-white/70"><span>{t('invoices:vat')}</span><span dir="ltr">SAR {money(totals.tax)}</span></div><p className="mt-3 text-[10px] text-[#F3D98B]">{t('creditNotes:creditTotal')}</p><p className="text-3xl font-black" dir="ltr">SAR {money(totals.total)}</p></div></div><p className="flex gap-2 px-1 text-[11px] leading-relaxed text-amber-800"><AlertCircle className="shrink-0" size={14} />{t('creditNotes:irreversible')}</p></aside>
+          <aside className="h-fit space-y-3 lg:sticky lg:top-0"><div className="rounded-2xl border border-[#0F2419] bg-[#0F2419] p-4 text-[#FFF9E8]"><p className="text-[10px] font-bold uppercase tracking-wider text-[#F3D98B]">{t('creditNotes:financialSummary')}</p><div className="mt-3 space-y-2 text-xs text-white/75"><p><span className="text-[#F3D98B]">{t('creditNotes:sourceInvoice')}</span><br />{invoice.invoice_number} · {invoiceDate(invoice.invoice_date, isRtl)}</p><p><span className="text-[#F3D98B]">{t('creditNotes:creditScope')}</span><br />{creditScope === 'full' ? t('creditNotes:fullRemaining') : creditScope === 'selected' ? t('creditNotes:selectedItems', { count: selectedLines.length }) : '—'}</p><p><span className="text-[#F3D98B]">{t('creditNotes:reason')}</span><br />{selectedReason || '—'}</p><p><span className="text-[#F3D98B]">{t('creditNotes:inventoryTreatment')}</span><br />{hasEligibleStockLines ? stockReturnChoice === true ? t('creditNotes:stockReturnYes') : stockReturnChoice === false ? t('creditNotes:stockReturnNo') : '—' : t('creditNotes:noStockMovement')}</p><p><span className="text-[#F3D98B]">{t('creditNotes:refundAllocationTitle')}</span><br />{generationCreditEligible ? t('creditNotes:generationOriginalRefundAllocation') : refundMode === 'split' ? t('refunds:split') : refundMode === 'card' ? t('creditNotes:bankTransferRefund') : refundMode === 'cash' ? t('refunds:cash') : '—'}</p></div><div className="mt-4 border-t border-white/15 pt-3"><div className="flex justify-between text-xs text-white/70"><span>{t('invoices:subtotal')}</span><span dir="ltr">SAR {money(totals.subtotal)}</span></div><div className="mt-1 flex justify-between text-xs text-white/70"><span>{t('invoices:vat')}</span><span dir="ltr">SAR {money(totals.tax)}</span></div><p className="mt-3 text-[10px] text-[#F3D98B]">{t('creditNotes:creditTotal')}</p><p className="text-3xl font-black" dir="ltr">SAR {money(totals.total)}</p></div></div><p className="flex gap-2 px-1 text-[11px] leading-relaxed text-amber-800"><AlertCircle className="shrink-0" size={14} />{t('creditNotes:irreversible')}</p></aside>
           {error && <div id={errorId} className="lg:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700" role="alert">{error}</div>}
         </main></div>
         <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-6"><button type="button" onClick={requestClose} disabled={busy} className="min-h-11 rounded-xl px-3 text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50">{t('common:cancel')}</button><button type="button" onClick={handleCreate} disabled={createDisabled} aria-describedby={error ? errorId : undefined} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#0F2419] px-5 text-xs font-bold text-white disabled:opacity-50">{busy && <Loader2 className="animate-spin" size={14} />}{actionLabel}</button></footer>
