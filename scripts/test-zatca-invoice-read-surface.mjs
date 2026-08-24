@@ -15,8 +15,12 @@ const safeColumns = [
   'notes', 'notes_ar', 'cancelled_at', 'cancellation_reason',
   'created_at', 'updated_at', 'session_id', 'payment_method',
   'is_demo', 'original_invoice_id', 'credit_reason', 'document_language',
+  'fiscal_regime_at_issue', 'fiscal_lifecycle_state', 'fiscal_artifact_stage', 'identity_snapshot',
 ]
-const preDemoSafeColumns = safeColumns.filter(column => column !== 'is_demo')
+const hostedBaseSafeColumns = safeColumns.filter(column => ![
+  'is_demo', 'identity_snapshot', 'fiscal_regime_at_issue', 'fiscal_lifecycle_state', 'fiscal_artifact_stage',
+].includes(column))
+const preDemoSafeColumns = hostedBaseSafeColumns
 
 const rawV2Columns = [
   'zatca_finalization_version', 'zatca_artifact_provenance',
@@ -88,6 +92,7 @@ const edge = read('supabase/functions/zatca-submit/index.ts')
 const submission = read('src/lib/zatca/submission.ts')
 const qrDisplay = read('src/lib/zatca/qrDisplay.mjs')
 const demoReadGrant = read('supabase/migrations/20260729000400_grant_demo_invoice_read.sql')
+const generationReadGrant = read('supabase/migrations/20260824000900_generation_invoice_read_surface.sql')
 
 const results = []
 async function test(name, callback) {
@@ -100,6 +105,7 @@ await test('canonical safe columns retain the later constrained demo marker gran
   assert.deepEqual(sqlConstantArray(migration, 'v_safe_columns'), preDemoSafeColumns)
   assert.deepEqual(sqlConstantArray(verification, 'v_safe_invoice_columns'), preDemoSafeColumns)
   assert.match(demoReadGrant, /GRANT SELECT \(is_demo\) ON TABLE public\.invoices TO authenticated/)
+  assert.match(generationReadGrant, /GRANT SELECT \(fiscal_regime_at_issue, fiscal_lifecycle_state, fiscal_artifact_stage\)/)
   assert.match(contractSource, /satisfies readonly \(keyof Invoice\)\[\]/)
   assert.match(contractSource, /Pick<Invoice, InvoiceSafeColumn>/)
 })
@@ -133,7 +139,7 @@ await test('all authenticated invoice selectors are explicit and server-only-fre
 await test('detail, receipt, and historical A4 paths use safe rows plus safe QR APIs', () => {
   for (const source of [detail, receipt]) {
     assert.match(source, /from\('invoices'\)\.select\(INVOICE_SAFE_SELECT\)/)
-    assert.match(source, /getInvoiceZatcaOutputState/)
+    assert.match(source, /(?:getInvoiceZatcaOutputState|readIssuedDocumentOutputState)/)
     assert.match(source, /getSandboxValidationStatus/)
     assert.match(source, /selectStoredOutputStateQr\(outputStateMatchesInvoice \? outputState : null\)/)
     assert.doesNotMatch(source, /invoice!?\.zatca_qr_code/)
@@ -149,10 +155,8 @@ await test('detail, receipt, and historical A4 paths use safe rows plus safe QR 
 await test('list, POS, credit-note, dashboard, and accounting selectors stay within the safe contract', () => {
   const expected = new Map([
     ['src/pages/invoices/InvoicesPage.tsx', ['id, branch_id, session_id, invoice_number', 'original_invoice_id']],
-    ['src/pages/pos/POSPage.tsx', ['id, zatca_invoice_type, total_amount']],
     ['src/pages/invoices/InvoiceDetailPage.tsx', ['payment_status, credit_reason', 'document_language']],
     ['src/pages/invoices/CreateCreditNoteModal.tsx', ['zatca_status']],
-    ['src/pages/day-closing/DayClosingPage.tsx', ['id, total_amount, tax_amount, zatca_invoice_type']],
     ['src/pages/customers/CustomerDetailPage.tsx', ['invoice_number, invoice_date, total_amount']],
     ['src/pages/operations/OperationsPage.tsx', ['zatca_status, zatca_submitted_at']],
     ['src/pages/admin/BranchDetailPage.tsx', ['invoice_date', 'payment_method']],

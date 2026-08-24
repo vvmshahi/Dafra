@@ -118,7 +118,37 @@ export interface ZatcaFinalizationResult {
   reconciliationRequired: boolean
   qrCode: string | null
   error: string | null
+  failureStage?: string | null
+  correlationId?: string | null
 }
+
+interface GenerationFinalizerDiagnostic {
+  error: string | null
+  failureStage: string | null
+  correlationId: string | null
+}
+
+function safeDiagnosticValue(value: unknown, pattern: RegExp): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 120 || !pattern.test(value)) return null
+  return value
+}
+
+async function readGenerationFinalizerDiagnostic(error: unknown): Promise<GenerationFinalizerDiagnostic> {
+  const context = (error as { context?: unknown } | null)?.context
+  if (!(context instanceof Response)) return { error: null, failureStage: null, correlationId: null }
+  try {
+    const body = await context.clone().json() as Record<string, unknown>
+    return {
+      error: safeDiagnosticValue(body.error, /^[A-Z0-9_]+$/),
+      failureStage: safeDiagnosticValue(body.failure_stage, /^[a-z0-9_]+$/),
+      correlationId: safeDiagnosticValue(body.correlation_id, /^[0-9a-f-]{36}$/i),
+    }
+  } catch {
+    return { error: null, failureStage: null, correlationId: null }
+  }
+}
+
+export type GenerationFinalizerError = Error & GenerationFinalizerDiagnostic
 
 export interface ZatcaOutputState {
   invoiceId: string
@@ -376,7 +406,14 @@ export async function finalizeGenerationInvoice(params: {
       expected_policy_revision: params.expectedPolicyRevision,
     },
   })
-  if (error) throw new Error(error.message)
+  if (error) {
+    const diagnostic = await readGenerationFinalizerDiagnostic(error)
+    const failure = new Error(diagnostic.error ?? error.message) as GenerationFinalizerError
+    failure.name = 'GenerationFinalizerError'
+    failure.failureStage = diagnostic.failureStage
+    failure.correlationId = diagnostic.correlationId
+    throw failure
+  }
   const finalizationStatus = String(
     data?.lifecycleState === 'generation_issued' ? 'generation_issued' : 'finalization_failed',
   )
@@ -394,6 +431,8 @@ export async function finalizeGenerationInvoice(params: {
     reconciliationRequired: false,
     qrCode: typeof data?.qrCode === 'string' ? data.qrCode : null,
     error: typeof data?.error === 'string' ? data.error : null,
+    failureStage: typeof data?.failure_stage === 'string' ? data.failure_stage : null,
+    correlationId: typeof data?.correlation_id === 'string' ? data.correlation_id : null,
   }
 }
 

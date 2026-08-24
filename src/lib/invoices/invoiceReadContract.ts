@@ -3,10 +3,11 @@ import type { Invoice } from '@/types/database'
 /**
  * Canonical browser-readable `public.invoices` contract.
  *
- * Keep this list aligned with
- * `04a_safe_invoice_read_surface.sql`. Raw compliance artifacts and operational
- * finalization state are intentionally absent; customer-output state and the
- * permitted final QR come from `getInvoiceZatcaOutputState` instead.
+ * Keep this list aligned with the hosted safe invoice read surface. Raw
+ * compliance artifacts remain absent; customer-facing Generation lifecycle
+ * state is safe to read so pending sales remain visible and issued documents
+ * can be labelled correctly. The permitted final QR comes from
+ * `getInvoiceZatcaOutputState` instead.
  */
 export const INVOICE_SAFE_COLUMNS = [
   'id',
@@ -42,6 +43,9 @@ export const INVOICE_SAFE_COLUMNS = [
   'original_invoice_id',
   'credit_reason',
   'document_language',
+  'fiscal_regime_at_issue',
+  'fiscal_lifecycle_state',
+  'fiscal_artifact_stage',
   // Immutable seller/buyer/document identity only; raw ZATCA artifacts stay
   // server-only and are read through the output-state API.
   'identity_snapshot',

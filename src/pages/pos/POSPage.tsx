@@ -215,6 +215,8 @@ interface ReceiptData {
   artifactStage: string
   documentKind: 'simplified' | 'standard' | null
   finalizationError: string | null
+  finalizationFailureStage: string | null
+  finalizationCorrelationId: string | null
   retryFinalizationAllowed: boolean
   sandboxGenerated: boolean
   generationCheckoutIdempotencyKey: string | null
@@ -341,6 +343,14 @@ function round2(value: number): number {
 
 function amountInput(value: number): string {
   return Math.max(0, round2(value)).toFixed(2)
+}
+
+function generationFinalizerDiagnostic(error: unknown) {
+  const value = error as { failureStage?: unknown; correlationId?: unknown } | null
+  return {
+    failureStage: typeof value?.failureStage === 'string' ? value.failureStage : null,
+    correlationId: typeof value?.correlationId === 'string' ? value.correlationId : null,
+  }
 }
 
 function parseExplicitMoneyInput(value: string): number | null {
@@ -1017,6 +1027,13 @@ function ReceiptView({ receipt, branch, onNewSale, onOpenPrinterSettings, onRetr
                   ? receipt.retryFinalizationAllowed ? t('pos:zatca.saleCompletedAttention') : t('pos:zatca.statusRefreshUnavailable')
                   : receipt.isStandardInvoice ? t('pos:zatca.finalizingTaxInvoice') : t('pos:zatca.finalizingInvoice')}</p>
                 {receipt.finalizationError && <p className="mt-1 font-normal text-amber-700">{receipt.finalizationError}</p>}
+                {(receipt.finalizationFailureStage || receipt.finalizationCorrelationId) && (
+                  <p className="mt-1 font-mono text-[10px] font-normal text-amber-700">
+                    {receipt.finalizationFailureStage ? `stage: ${receipt.finalizationFailureStage}` : null}
+                    {receipt.finalizationFailureStage && receipt.finalizationCorrelationId ? ' · ' : null}
+                    {receipt.finalizationCorrelationId ? `correlation: ${receipt.finalizationCorrelationId}` : null}
+                  </p>
+                )}
                 {receipt.retryFinalizationAllowed && <div className="mt-2 flex justify-center gap-2">
                   <button
                     type="button"
@@ -3218,6 +3235,8 @@ export default function POSPage() {
       let artifactStage = 'none'
       let documentKind: 'simplified' | 'standard' | null = isB2BInvoice ? 'standard' : 'simplified'
       let finalizationError: string | null = null
+      let finalizationFailureStage: string | null = null
+      let finalizationCorrelationId: string | null = null
       let retryFinalizationAllowed = true
 
       try {
@@ -3350,6 +3369,9 @@ export default function POSPage() {
           }
         }
       } catch (finalizationFailure) {
+        const diagnostic = generationFinalizerDiagnostic(finalizationFailure)
+        finalizationFailureStage = diagnostic.failureStage
+        finalizationCorrelationId = diagnostic.correlationId
         if (sandboxDemo && preOutputSubmission?.mode === 'sandbox_submission' && preOutputSubmission.result.ok) {
           finalizationStatus = preOutputSubmission.result.finalizationStatus
           artifactStage = preOutputSubmission.result.artifactStage
@@ -3459,6 +3481,8 @@ export default function POSPage() {
         artifactStage,
         documentKind,
         finalizationError,
+        finalizationFailureStage,
+        finalizationCorrelationId,
         retryFinalizationAllowed,
         sandboxGenerated: sandboxDemo,
         generationCheckoutIdempotencyKey: generationCheckoutRequested ? idempotencyKey : null,
@@ -3744,7 +3768,12 @@ export default function POSPage() {
           checkoutIdempotencyKey: receipt.generationCheckoutIdempotencyKey,
           expectedPolicyRevision: receipt.generationPolicyRevision,
         })
-        if (!finalized.ok) throw new Error(finalized.error ?? 'Generation invoice finalization is still pending.')
+        if (!finalized.ok) {
+          const failure = new Error(finalized.error ?? 'Generation invoice finalization is still pending.') as Error & { failureStage?: string | null; correlationId?: string | null }
+          failure.failureStage = finalized.failureStage ?? null
+          failure.correlationId = finalized.correlationId ?? null
+          throw failure
+        }
         setReceipt(current => current ? {
           ...current,
           zatcaQrCode: finalized.qrCode ?? '',
@@ -3753,7 +3782,12 @@ export default function POSPage() {
           artifactStage: finalized.artifactStage,
           documentKind: finalized.documentKind ?? current.documentKind,
           finalizationError: null,
+          finalizationFailureStage: null,
+          finalizationCorrelationId: null,
         } : current)
+        updateCachedInvoiceRows(branch.tenant_id, branch.id, rows => rows.map(row => row.id === receipt.invoiceId
+          ? { ...row, fiscalRegimeAtIssue: 'generation', fiscalLifecycleState: 'generation_issued' }
+          : row))
         toast.success(t('pos:zatca.success'))
         return
       }
@@ -3827,8 +3861,15 @@ export default function POSPage() {
       if (storedQrCode) toast.success(t('pos:zatca.success'))
       else toast.warning(t('pos:zatca.saleCompletedAttention'))
     } catch (error) {
+      const diagnostic = generationFinalizerDiagnostic(error)
       const message = error instanceof Error ? error.message : 'Invoice finalization requires attention.'
-      setReceipt(current => current ? { ...current, canPrint: false, finalizationError: message } : current)
+      setReceipt(current => current ? {
+        ...current,
+        canPrint: false,
+        finalizationError: message,
+        finalizationFailureStage: diagnostic.failureStage,
+        finalizationCorrelationId: diagnostic.correlationId,
+      } : current)
       toast.warning(t('pos:zatca.saleCompletedAttention'))
     }
   }
