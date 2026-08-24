@@ -18,6 +18,10 @@
     "closed": "Closed"
   },
   "detail": {
+    "generationMode": "Generation Phase",
+    "integrationMode": "Integration Phase",
+    "sandbox": "Sandbox",
+    "production": "Production",
     "back": "Back to Dashboard",
     "main": "MAIN",
     "zatcaPhase1": "ZATCA Phase 1",

@@ -28,6 +28,8 @@ export interface InvoiceListRow {
   creditNoteCount: number
   creditStatus: 'none' | 'partial' | 'full'
   remainingRefundableQuantity: number
+  fiscalRegimeAtIssue?: 'generation' | 'integration'
+  fiscalLifecycleState?: string
 }
 
 export interface InvoiceListScope {

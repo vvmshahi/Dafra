@@ -850,6 +850,10 @@ export interface Branch {
   show_logo: boolean
   invoice_language: 'en' | 'ar' | 'both'
   zatca_phase: 1 | 2
+  fiscal_regime?: 'generation' | 'integration'
+  integration_environment?: 'sandbox' | 'production'
+  fiscal_policy_revision?: number
+  fiscal_activation_state?: 'generation_active' | 'integration_setup' | 'integration_active'
   branch_email: string | null   // login email for the branch POS account
   // Added by update-invoice-settings.sql
   display_name: string | null

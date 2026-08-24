@@ -248,6 +248,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [phone,         setPhone]         = useState('')
   const [city,          setCity]          = useState('')
   const [businessType,  setBusinessType]  = useState<BusinessType>('trading')
+  const [fiscalRegime, setFiscalRegime] = useState<'generation' | 'integration'>('integration')
   const [planId,        setPlanId]        = useState('')
   const [branchCount,   setBranchCount]   = useState(1)
   const [paymentType,   setPaymentType]   = useState<PaymentType>('one_time')
@@ -309,6 +310,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
           phone:           phone.trim() || null,
           city:            city.trim() || null,
           business_type:    businessType,
+          fiscal_regime:    fiscalRegime,
           plan_id:         planId,
           branch_count:    branchCount,
           payment_type:    paymentType,
@@ -364,6 +366,23 @@ function CreateAccountModal({ onCreated, onCancel }: {
               <div>
                 <p className="text-sm font-semibold text-emerald-900">{t('create.created')}</p>
                 <p className="text-xs text-emerald-700 mt-0.5">{t('create.createdHelp')}</p>
+              </div>
+            </div>
+
+            {/* Business-facing fiscal choice; the server owns the resulting branch policy. */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">{t('create.fiscalMode')}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button type="button" onClick={() => setFiscalRegime('generation')}
+                  className={`text-left rounded-xl border-2 p-3 transition-all ${fiscalRegime === 'generation' ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500/20' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+                  <p className="text-xs font-semibold text-gray-900">{t('create.generationMode')}</p>
+                  <p className="text-[10px] text-gray-500 mt-1 leading-tight">{t('create.generationModeHelp')}</p>
+                </button>
+                <button type="button" onClick={() => setFiscalRegime('integration')}
+                  className={`text-left rounded-xl border-2 p-3 transition-all ${fiscalRegime === 'integration' ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500/20' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+                  <p className="text-xs font-semibold text-gray-900">{t('create.integrationMode')}</p>
+                  <p className="text-[10px] text-gray-500 mt-1 leading-tight">{t('create.integrationModeHelp')}</p>
+                </button>
               </div>
             </div>
 

@@ -93,6 +93,7 @@ Deno.serve(async (req: Request) => {
       pay_method: body.pay_method || null,
       pay_ref: body.pay_ref || null,
       notes: body.notes?.trim() || null,
+      fiscal_regime: body.fiscal_regime === 'generation' ? 'generation' : 'integration',
     }
     // ends_at is intentionally excluded: the UI derives it from "now", so a
     // retry seconds later must still address the original durable request.
@@ -103,6 +104,7 @@ Deno.serve(async (req: Request) => {
       business_type: safePayload.business_type, branch_count: safePayload.branch_count,
       payment_type: safePayload.payment_type, duration_months: safePayload.duration_months,
       pay_method: safePayload.pay_method, pay_ref: safePayload.pay_ref, notes: safePayload.notes,
+      fiscal_regime: safePayload.fiscal_regime,
     }))
     const auditBase = {
       tenantId: null, branchId: null, actorUserId: caller.id, actorRole: 'super_admin',

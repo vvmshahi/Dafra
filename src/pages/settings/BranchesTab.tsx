@@ -1684,8 +1684,13 @@ function BranchCard({
               </Badge>
               <span className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-semibold text-primary-800">
                 <ShieldCheck size={11} />
-                Phase {branch.zatca_phase ?? 1}
+                {branch.fiscal_regime === 'generation' ? t('detail.generationMode') : t('detail.integrationMode')}
               </span>
+              {branch.fiscal_regime !== 'generation' && branch.integration_environment && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-[11px] font-semibold text-primary-800">
+                  {t(`detail.${branch.integration_environment}`)}
+                </span>
+              )}
             </div>
           </div>
         </div>

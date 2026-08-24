@@ -111,6 +111,7 @@
   "postedOnly": "Only posted invoices can be credited.",
   "submitBeforeCredit": "Submit this invoice to ZATCA before creating a credit note.",
   "reportedOnly": "Only reported or cleared invoices can be credited.",
+  "crossRegimeNoteNotAllowed": "This Generation invoice cannot receive a note from an Integration Phase branch.",
   "cancelledCannotCredit": "Cancelled invoices cannot be credited here.",
   "refundableUnavailable": "Refundable item data is not available.",
   "fullyCreditedReason": "All refundable quantities have already been credited.",

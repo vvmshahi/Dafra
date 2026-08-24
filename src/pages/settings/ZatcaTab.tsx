@@ -40,6 +40,7 @@ import {
 } from '@/lib/zatca/api'
 import { getCachedProductionStatus, readCachedProductionStatus, writeCachedProductionStatus } from '@/lib/zatca/status'
 import type { Branch } from '@/types'
+import { beginIntegrationSetup, getFiscalReadiness, type FiscalReadiness } from '@/lib/fiscal/readiness'
 import {
   capabilityForFunctionalityMap,
   functionalityMapForCapability,
@@ -53,6 +54,7 @@ type BranchWithCert = Branch & {
   productionStatus?: ProductionOnboardingResponse | null
   sandboxStatus?: SandboxOnboardingResponse | null
   connectionState?: ZatcaConnectionResolution | null
+  fiscalReadiness?: FiscalReadiness | null
 }
 
 const FATOORA_PORTAL_URL = 'https://fatoora.zatca.gov.sa/'
@@ -980,6 +982,7 @@ function SandboxOnboardingPanel({
 /* ── Branch accordion row (FIX 2) ────────────────────────────────────────── */
 
 function branchSummaryKey(bc: BranchWithCert): string {
+  if (bc.fiscal_regime === 'generation') return 'generation.summary'
   const phase = bc.zatca_phase ?? 1
   if (phase < 2) return 'summary.requiresPhase2'
   if (bc.zatca_environment === 'sandbox') {
@@ -1008,6 +1011,7 @@ function BranchAccordionRow({
 }) {
   const { t } = useTranslation('zatca')
   const phase = bc.zatca_phase ?? 1
+  const isGeneration = bc.fiscal_regime === 'generation'
   const isSandbox = bc.zatca_environment === 'sandbox'
   const productionConnected = bc.productionStatus?.onboardingStatus === 'production_connected'
   const sandboxConnected = bc.connectionState?.connection_state === 'connected'
@@ -1045,7 +1049,7 @@ function BranchAccordionRow({
           <p className="text-[11px] text-gray-500 mt-1 truncate">{t(branchSummaryKey(bc))}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {phase >= 2 && (isSandbox ? sandboxConnected : productionConnected) && (
+          {!isGeneration && phase >= 2 && (isSandbox ? sandboxConnected : productionConnected) && (
             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
               productionConnected
                 ? 'bg-emerald-100 text-emerald-700'
@@ -1054,8 +1058,9 @@ function BranchAccordionRow({
               {isSandbox ? 'Sandbox' : t('environment.production')}
             </span>
           )}
-          {phase >= 2 && <Badge variant={summaryCfg.variant} dot>{summaryCfg.label}</Badge>}
-          {phase < 2 && (
+          {isGeneration && <Badge variant="success" dot>{t('generation.active')}</Badge>}
+          {!isGeneration && phase >= 2 && <Badge variant={summaryCfg.variant} dot>{summaryCfg.label}</Badge>}
+          {!isGeneration && phase < 2 && (
             <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
               {t('phase.notPhase2')}
             </span>
@@ -1070,7 +1075,9 @@ function BranchAccordionRow({
       {/* Expanded content */}
       {isExpanded && (
         <div className="border-t border-gray-100 bg-white p-5 space-y-5">
-          {phase < 2 ? (
+          {isGeneration ? (
+            <GenerationReadinessPanel branch={bc} />
+          ) : phase < 2 ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3 bg-primary-50 border border-primary-100 rounded-2xl p-4">
                 <Info size={14} className="text-primary-600 mt-0.5 flex-shrink-0" />
@@ -1114,6 +1121,41 @@ function BranchAccordionRow({
   )
 }
 
+function GenerationReadinessPanel({ branch }: { branch: BranchWithCert }) {
+  const { t } = useTranslation('zatca')
+  const { profile } = useAuth()
+  const [busy, setBusy] = useState(false)
+  const [started, setStarted] = useState(branch.fiscal_activation_state === 'integration_setup')
+  const readiness = branch.fiscalReadiness
+  const begin = async () => {
+    setBusy(true)
+    try { await beginIntegrationSetup(branch.id); setStarted(true) } finally { setBusy(false) }
+  }
+  const missing = readiness?.generationMissingFields ?? []
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+        <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+        <div><p className="text-sm font-bold text-emerald-900">{t('generation.active')}</p><p className="mt-1 text-[11px] leading-relaxed text-emerald-800">{t('generation.activeHelp')}</p></div>
+      </div>
+      <div className="rounded-2xl border border-gray-100 p-4">
+        <p className="text-xs font-bold text-gray-900">{t('generation.readiness')}</p>
+        <p className="mt-1 text-[11px] text-gray-500">{readiness?.generationReady ? t('generation.ready') : t('generation.completeDetails')}</p>
+        {missing.length > 0 && <p className="mt-2 text-[11px] text-amber-700">{t('generation.missing')}: {missing.join(', ')}</p>}
+      </div>
+      <div className="rounded-2xl border border-primary-100 bg-primary-50 p-4">
+        <p className="text-xs font-bold text-primary-900">{t('generation.integrationTitle')}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-primary-800">{t('generation.integrationHelp')}</p>
+        {profile?.role === 'owner' ? (
+          <button type="button" onClick={begin} disabled={busy || started} className="mt-3 rounded-xl bg-primary-600 px-4 py-2 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
+            {started ? t('generation.integrationStarted') : busy ? t('generation.starting') : t('generation.connect')}
+          </button>
+        ) : <p className="mt-3 text-[11px] font-semibold text-primary-700">{t('generation.ownerOnly')}</p>}
+      </div>
+    </div>
+  )
+}
+
 /* ── Main tab ─────────────────────────────────────────────────────────────── */
 
 export default function ZatcaTab() {
@@ -1135,9 +1177,13 @@ export default function ZatcaTab() {
     const productionStatuses = new Map<string, ProductionOnboardingResponse | null>()
     const sandboxStatuses = new Map<string, SandboxOnboardingResponse | null>()
     const connectionStates = new Map<string, ZatcaConnectionResolution | null>()
+    const fiscalReadiness = new Map<string, FiscalReadiness | null>()
+    await Promise.all(branches.map(async branch => {
+      try { fiscalReadiness.set(branch.id, await getFiscalReadiness(branch.id)) } catch { fiscalReadiness.set(branch.id, null) }
+    }))
     if (profile.role === 'owner') {
       await Promise.all(branches
-        .filter(branch => (branch.zatca_phase ?? 1) === 2)
+        .filter(branch => branch.fiscal_regime !== 'generation' && (branch.zatca_phase ?? 1) === 2)
         .map(async branch => {
           try { connectionStates.set(branch.id, await getZatcaConnectionState(branch.id)) } catch { connectionStates.set(branch.id, null) }
           if (branch.zatca_environment === 'sandbox') {
@@ -1158,6 +1204,7 @@ export default function ZatcaTab() {
       productionStatus: productionStatuses.has(b.id) ? productionStatuses.get(b.id) ?? null : undefined,
       sandboxStatus: sandboxStatuses.has(b.id) ? sandboxStatuses.get(b.id) ?? null : undefined,
       connectionState: connectionStates.has(b.id) ? connectionStates.get(b.id) ?? null : undefined,
+      fiscalReadiness: fiscalReadiness.has(b.id) ? fiscalReadiness.get(b.id) ?? null : undefined,
     })))
     // Auto-expand first branch if only one
     setExpandedId(prev => branches.length === 1 && !prev ? branches[0].id : prev)
@@ -1183,9 +1230,11 @@ export default function ZatcaTab() {
     setExpandedId(prev => prev === branchId ? null : branchId)
   }
 
-  const phase2Count = data.filter(b => (b.zatca_phase ?? 1) === 2).length
+  const phase2Count = data.filter(b => b.fiscal_regime !== 'generation' && (b.zatca_phase ?? 1) === 2).length
   const activeCount = data.filter(b =>
-    b.zatca_environment === 'sandbox'
+    b.fiscal_regime === 'generation'
+      ? b.fiscal_activation_state === 'generation_active'
+      : b.zatca_environment === 'sandbox'
       ? b.connectionState?.connection_state === 'connected'
       : b.productionStatus?.onboardingStatus === 'production_connected'
   ).length
@@ -1243,7 +1292,7 @@ export default function ZatcaTab() {
         </div>
       )}
 
-      {data.some(b => !b.vat_number && (b.zatca_phase ?? 1) === 2) && (
+      {data.some(b => b.fiscal_regime !== 'generation' && !b.vat_number && (b.zatca_phase ?? 1) === 2) && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-100 rounded-2xl p-4">
           <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
           <div>

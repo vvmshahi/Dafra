@@ -18,6 +18,10 @@
     "closed": "مغلق"
   },
   "detail": {
+    "generationMode": "مرحلة التوليد",
+    "integrationMode": "مرحلة التكامل",
+    "sandbox": "بيئة الاختبار",
+    "production": "الإنتاج",
     "back": "العودة إلى لوحة المعلومات",
     "main": "رئيسي",
     "zatcaPhase1": "ZATCA المرحلة الأولى",

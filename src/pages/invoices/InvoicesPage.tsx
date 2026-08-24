@@ -45,6 +45,7 @@ type OwnerInvoiceBranch = {
   id: string
   name: string
   name_ar: string | null
+  fiscal_regime?: 'generation' | 'integration'
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -136,10 +137,16 @@ const INVOICE_KPI_TONES = {
   documents: 'bg-gradient-to-br from-[#334155] to-[#1e293b]',
 } as const
 
-function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined, t: TFunction): string | null {
+function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefined, t: TFunction, currentFiscalRegime?: string): string | null {
   if (row.documentType === 'credit_note') return t('invoices:creditNotesCannotBeCredited')
   if (row.status === 'cancelled') return t('invoices:cancelledCannotCredit')
   if (row.status !== 'posted') return t('invoices:postedOnly')
+  if (row.fiscalRegimeAtIssue === 'generation' && row.fiscalLifecycleState === 'generation_issued') {
+    if (currentFiscalRegime === 'integration') return t('invoices:crossRegimeNoteNotAllowed')
+    if (role && !['owner', 'branch'].includes(role)) return t('validation:creditPermissionDenied')
+    if (row.creditStatus === 'full' || row.remainingRefundableQuantity <= 0) return t('invoices:fullyCreditedReason')
+    return null
+  }
   const submitted = row.displayZatcaStatus === 'sandbox_validated' ||
     row.displayZatcaStatus === 'sandbox_validated_with_warnings' ||
     row.zatcaStatus === 'reported' || row.zatcaStatus === 'cleared'
@@ -269,7 +276,7 @@ export default function InvoicesPage() {
     ;(async () => {
       const { data, error } = await supabase
         .from('branches')
-        .select('id, name, name_ar')
+        .select('id, name, name_ar, fiscal_regime')
         .eq('tenant_id', profile.tenant_id)
         .order('name')
       if (cancelled) return
@@ -387,6 +394,7 @@ export default function InvoicesPage() {
           .select(`
             id, branch_id, session_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status, is_demo,
             subtotal, tax_amount, total_amount, payment_method, payment_status, zatca_status,
+            fiscal_regime_at_issue, fiscal_lifecycle_state,
             customers(name),
             invoice_items(id, quantity),
             payments(method)
@@ -531,6 +539,8 @@ export default function InvoicesPage() {
           creditNoteCount: linkedCreditNote?.count ?? 0,
           creditStatus,
           remainingRefundableQuantity: originalQuantityTotal > 0 ? remainingRefundableQuantity : 0,
+          fiscalRegimeAtIssue: inv.fiscal_regime_at_issue ?? 'integration',
+          fiscalLifecycleState: inv.fiscal_lifecycle_state ?? null,
         }
         })
         setRows(processed)
@@ -596,7 +606,7 @@ export default function InvoicesPage() {
     || payFilter !== 'all'
     || zatcaFilter !== 'all'
   const demoSandbox = isPermanentDemoSandboxBranch(profile?.tenant_id, effectiveBranchId)
-  const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
+  const retryableZatcaCount = demoSandbox ? 0 : rows.filter(r => r.fiscalRegimeAtIssue !== 'generation' && r.status !== 'cancelled' && (r.zatcaStatus === 'failed' || r.zatcaStatus === 'pending')).length
   const emptyTitle = sessionShortcut === 'current'
     ? t('invoices:noCurrentSessionInvoices')
     : sessionShortcut === 'previous'
@@ -624,7 +634,10 @@ export default function InvoicesPage() {
   }
 
   const documentRows = filtered.map(r => {
-    const zatcaBase = ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
+    const generationIssued = r.fiscalRegimeAtIssue === 'generation' && r.fiscalLifecycleState === 'generation_issued'
+    const zatcaBase = generationIssued
+      ? { label: 'Issued', bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500' }
+      : ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
     const zatcaKey = r.displayZatcaStatus === 'sandbox_validated' ? 'submitted'
       : r.displayZatcaStatus === 'sandbox_validated_with_warnings' ? 'submittedWarnings'
       : r.displayZatcaStatus === 'sandbox_validation_rejected' ? 'rejected'
@@ -633,7 +646,7 @@ export default function InvoicesPage() {
       : r.displayZatcaStatus === 'reported' ? 'reported'
       : r.displayZatcaStatus === 'cleared' ? 'cleared'
       : r.displayZatcaStatus.includes('failed') ? 'failed' : 'pending'
-    const zatca = { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
+    const zatca = generationIssued ? zatcaBase : { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
     const payBase = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
     const pay = payBase ? {
       ...payBase,
@@ -650,7 +663,7 @@ export default function InvoicesPage() {
       pay,
       isCancelled: r.status === 'cancelled',
       isCreditNote: r.documentType === 'credit_note',
-      creditDisabledReason: creditNoteDisabledReason(r, profile?.role, t),
+      creditDisabledReason: creditNoteDisabledReason(r, profile?.role, t, ownerBranches.find(b => b.id === r.branchId)?.fiscal_regime),
     }
   })
 
