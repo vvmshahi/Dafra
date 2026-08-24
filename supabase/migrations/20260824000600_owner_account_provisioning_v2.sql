@@ -158,7 +158,7 @@ BEGIN
   INSERT INTO public.user_profiles (id, role, tenant_id, branch_id, full_name, email, is_active)
   VALUES (p_auth_user_id, 'owner', v_tenant_id, NULL, btrim(v_payload->>'company_name'),
     lower(btrim(v_payload->>'email')), true)
-  ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, branch_id = NULL,
+  ON CONFLICT ON CONSTRAINT user_profiles_pkey DO UPDATE SET tenant_id = EXCLUDED.tenant_id, branch_id = NULL,
     role = 'owner', full_name = EXCLUDED.full_name, email = EXCLUDED.email,
     is_active = true, updated_at = now()
   WHERE public.user_profiles.tenant_id IS NULL;
@@ -184,7 +184,7 @@ BEGIN
   v_failure_step := 'initialize_fiscal_policy';
   INSERT INTO public.tenant_fiscal_onboarding_intents (tenant_id, requested_regime, requested_by)
   VALUES (v_tenant_id, v_intent, v_op.initiated_by)
-  ON CONFLICT (tenant_id) DO UPDATE SET requested_regime = EXCLUDED.requested_regime,
+  ON CONFLICT ON CONSTRAINT tenant_fiscal_onboarding_intents_pkey DO UPDATE SET requested_regime = EXCLUDED.requested_regime,
     requested_by = EXCLUDED.requested_by, updated_at = now();
 
   v_failure_step := 'create_first_branch';
@@ -204,7 +204,7 @@ BEGIN
   ) VALUES (v_tenant_id, 'owner_invited', 'owner_invited', 'first_branch_created',
     CASE WHEN v_intent = 'generation' THEN 'not_required' ELSE 'zatca_setup_pending' END,
     v_op.initiated_by)
-  ON CONFLICT (tenant_id) DO UPDATE SET onboarding_status = EXCLUDED.onboarding_status,
+  ON CONFLICT ON CONSTRAINT tenant_onboarding_status_tenant_id_key DO UPDATE SET onboarding_status = EXCLUDED.onboarding_status,
     owner_setup_status = EXCLUDED.owner_setup_status, branch_setup_status = EXCLUDED.branch_setup_status,
     zatca_setup_status = EXCLUDED.zatca_setup_status, updated_by = EXCLUDED.updated_by;
 
