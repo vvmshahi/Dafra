@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildGenerationQr } from '../_shared/fiscal/generation_qr.mjs'
 import { validateGenerationInvoiceSnapshot, GENERATION_ERRORS } from '../_shared/fiscal/generation_validation.mjs'
+import { classifyGenerationFinalizerPreflight } from '../_shared/fiscal/generation_finalizer_preflight.mjs'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,11 +32,72 @@ function errorCode(error: unknown): string {
   return GENERATION_ERRORS.FINALIZATION_FAILED
 }
 
+function sanitizeLogText(value: unknown): string | null {
+  if (value == null) return null
+  return String(value)
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+    .replace(/((?:password|secret|token|authorization|private[_-]?key)\s*[:=]\s*)[^\s,}]+/gi, '$1[REDACTED]')
+    .slice(0, 500)
+}
+
+function safeDbError(error: unknown) {
+  const value = error as { code?: unknown; message?: unknown; details?: unknown; hint?: unknown } | null
+  return {
+    code: sanitizeLogText(value?.code),
+    message: sanitizeLogText(value?.message ?? error),
+    details: sanitizeLogText(value?.details),
+    hint: sanitizeLogText(value?.hint),
+  }
+}
+
+function logDiagnostic(params: {
+  correlationId: string
+  failureStage: string
+  failureCode: string
+  invoiceId: string | null
+  branchId: string | null
+  expectedPolicyRevision: number | null
+  checkoutIdempotencyKey: string | null
+  error?: unknown
+}) {
+  console.error(JSON.stringify({
+    event: 'generation_finalizer_failure',
+    timestamp: new Date().toISOString(),
+    correlation_id: params.correlationId,
+    failure_stage: params.failureStage,
+    failure_code: params.failureCode,
+    invoice_id: params.invoiceId,
+    branch_id: params.branchId,
+    expected_policy_revision: params.expectedPolicyRevision,
+    checkout_idempotency_key: params.checkoutIdempotencyKey,
+    ...(params.error ? { upstream_error: safeDbError(params.error) } : {}),
+  }))
+}
+
+function diagnosticResponse(params: {
+  correlationId: string
+  failureStage: string
+  failureCode: string
+  invoiceId: string | null
+  branchId: string | null
+  expectedPolicyRevision: number | null
+  checkoutIdempotencyKey: string | null
+  error?: unknown
+}) {
+  logDiagnostic(params)
+  return response({
+    error: params.failureCode,
+    failure_stage: params.failureStage,
+    correlation_id: params.correlationId,
+  }, 422)
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return response({ error: 'METHOD_NOT_ALLOWED' }, 405)
 
   try {
+    const correlationId = crypto.randomUUID()
     const url = Deno.env.get('SUPABASE_URL')
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
@@ -88,8 +150,28 @@ Deno.serve(async req => {
       db.rpc('build_zatca_atomic_receipt_snapshot_v2', { p_invoice_id: invoice_id }),
       db.from('branches').select('id, tenant_id, fiscal_regime, fiscal_activation_state, fiscal_policy_revision').eq('id', branch_id).maybeSingle(),
     ])
-    if (policyError || !policy || invoiceError || snapshotError || branchError || !invoice || !snapshot || !branch || invoice.branch_id !== branch_id || policy.regime !== 'generation') {
-      return response({ error: GENERATION_ERRORS.POLICY_INVALID }, 422)
+    const preflightFailure = classifyGenerationFinalizerPreflight({
+      policy,
+      policyError,
+      invoice,
+      invoiceError,
+      snapshot,
+      snapshotError,
+      branch,
+      branchError,
+      branchId: branch_id,
+    })
+    if (preflightFailure) {
+      return diagnosticResponse({
+        correlationId,
+        failureStage: preflightFailure.stage,
+        failureCode: preflightFailure.code,
+        invoiceId: invoice_id,
+        branchId: branch_id,
+        expectedPolicyRevision: expected_policy_revision,
+        checkoutIdempotencyKey: checkout_idempotency_key,
+        error: preflightFailure.error,
+      })
     }
     if (policy.policyRevision !== expected_policy_revision) return response({ error: 'FISCAL_POLICY_CHANGED' }, 409)
     if (invoice.status !== 'posted' || (!invoice.original_invoice_id && !['simplified', 'standard'].includes(invoice.zatca_invoice_type)) || (invoice.original_invoice_id && !['credit_note', 'debit_note'].includes(invoice.zatca_invoice_type))) {
@@ -130,11 +212,32 @@ Deno.serve(async req => {
     })
     if (finalizeError) {
       const code = errorCode(finalizeError)
-      return response({ error: code }, code === 'IDEMPOTENCY_CONFLICT' || code === 'FISCAL_POLICY_CHANGED' || code === 'CROSS_REGIME_NOTE_NOT_ALLOWED' ? 409 : 422)
+      logDiagnostic({
+        correlationId,
+        failureStage: 'finalization_rpc',
+        failureCode: code,
+        invoiceId: invoice_id,
+        branchId: branch_id,
+        expectedPolicyRevision: expected_policy_revision,
+        checkoutIdempotencyKey: checkout_idempotency_key,
+        error: finalizeError,
+      })
+      return response({ error: code, failure_stage: 'finalization_rpc', correlation_id: correlationId }, code === 'IDEMPOTENCY_CONFLICT' || code === 'FISCAL_POLICY_CHANGED' || code === 'CROSS_REGIME_NOTE_NOT_ALLOWED' ? 409 : 422)
     }
     return response(result as Record<string, unknown>)
   } catch (error) {
     const code = errorCode(error)
-    return response({ error: code }, 422)
+    const correlationId = crypto.randomUUID()
+    logDiagnostic({
+      correlationId,
+      failureStage: 'request_processing',
+      failureCode: code,
+      invoiceId: null,
+      branchId: null,
+      expectedPolicyRevision: null,
+      checkoutIdempotencyKey: null,
+      error,
+    })
+    return response({ error: code, failure_stage: 'request_processing', correlation_id: correlationId }, 422)
   }
 })
