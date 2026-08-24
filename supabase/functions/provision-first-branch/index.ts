@@ -66,10 +66,13 @@ Deno.serve(async (req: Request) => {
       p_owner_id: caller.id, p_branch_payload: branchPayload,
     })
     if (prepareError || !prepared?.[0]) {
-      const code = /LIMIT/.test(prepareError?.message ?? '') ? 'BRANCH_LIMIT_REACHED'
+      const message = prepareError?.message ?? ''
+      const code = /FIRST_BRANCH_INVALID_(NAME|VAT|CR|BUILDING|POSTAL|STREET|DISTRICT|CITY)/.test(message)
+        ? 'INVALID_REQUEST'
+        : /LIMIT/.test(message) ? 'BRANCH_LIMIT_REACHED'
         : /INACTIVE|SUSPEND/.test(prepareError?.message ?? '') ? 'TENANT_INACTIVE'
         : 'FAILED_RECOVERABLE'
-      return json({ code }, code === 'FAILED_RECOVERABLE' ? 503 : 409)
+      return json({ code }, code === 'FAILED_RECOVERABLE' ? 503 : code === 'INVALID_REQUEST' ? 400 : 409)
     }
     const state = prepared[0]
     provisioningId = state.provisioning_id
