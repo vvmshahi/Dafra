@@ -456,6 +456,7 @@ export default function CustomerDetailPage() {
           simplified: t('customerIntelligence:history.simplified'),
           standard: t('customerIntelligence:history.standard'),
           credit_note: t('customerIntelligence:history.credit_note'),
+          debit_note: t('customerIntelligence:history.debit_note'),
         },
         insightText: insight => insightText(insight, t),
       }

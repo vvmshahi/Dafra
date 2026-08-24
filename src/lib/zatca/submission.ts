@@ -128,6 +128,12 @@ export interface GenerationCreditNoteResult extends ZatcaFinalizationResult {
   idempotentReplay: boolean
 }
 
+export interface GenerationDebitNoteResult extends ZatcaFinalizationResult {
+  invoiceId: string
+  invoiceNumber: string
+  idempotentReplay: boolean
+}
+
 interface GenerationFinalizerDiagnostic {
   error: string | null
   failureStage: string | null
@@ -442,25 +448,19 @@ export async function finalizeGenerationInvoice(params: {
   }
 }
 
-/**
- * Creates and finalizes a Generation Credit Note through the B3 server path.
- * The Edge function resolves the parent, branch regime, policy revision, and
- * full-parent restriction from persisted rows; this client payload is only a
- * request, never an eligibility override.
- */
-export async function createGenerationCreditNote(params: {
+async function createGenerationNote(noteType: 'credit_note' | 'debit_note', params: {
   parentInvoiceId: string
   branchId: string
   reason: string
   returnStock: boolean
   checkoutIdempotencyKey: string
   expectedPolicyRevision: number
-}): Promise<GenerationCreditNoteResult> {
+}): Promise<GenerationCreditNoteResult | GenerationDebitNoteResult> {
   const { data, error } = await supabase.functions.invoke('fiscal-finalize-generation', {
     body: {
       parent_invoice_id: params.parentInvoiceId,
       branch_id: params.branchId,
-      note_type: 'credit_note',
+      note_type: noteType,
       reason: params.reason,
       return_stock: params.returnStock,
       checkout_idempotency_key: params.checkoutIdempotencyKey,
@@ -478,7 +478,7 @@ export async function createGenerationCreditNote(params: {
   const invoiceId = typeof data?.invoiceId === 'string' ? data.invoiceId : ''
   const invoiceNumber = typeof data?.invoiceNumber === 'string' ? data.invoiceNumber : ''
   if (!invoiceId || !invoiceNumber || data?.lifecycleState !== 'generation_issued' || data?.canPrint !== true) {
-    throw new Error(String(data?.error ?? 'Generation Credit Note finalization requires attention.'))
+    throw new Error(String(data?.error ?? `Generation ${noteType === 'debit_note' ? 'Debit' : 'Credit'} Note finalization requires attention.`))
   }
   return {
     invoiceId,
@@ -498,6 +498,29 @@ export async function createGenerationCreditNote(params: {
     qrCode: typeof data?.qrCode === 'string' ? data.qrCode : null,
     error: null,
   }
+}
+
+/** Creates and finalizes a Generation Credit Note through the canonical B3 path. */
+export async function createGenerationCreditNote(params: {
+  parentInvoiceId: string
+  branchId: string
+  reason: string
+  returnStock: boolean
+  checkoutIdempotencyKey: string
+  expectedPolicyRevision: number
+}): Promise<GenerationCreditNoteResult> {
+  return createGenerationNote('credit_note', params) as Promise<GenerationCreditNoteResult>
+}
+
+/** Creates and finalizes a Generation Debit Note through the canonical B3 path. */
+export async function createGenerationDebitNote(params: {
+  parentInvoiceId: string
+  branchId: string
+  reason: string
+  checkoutIdempotencyKey: string
+  expectedPolicyRevision: number
+}): Promise<GenerationDebitNoteResult> {
+  return createGenerationNote('debit_note', { ...params, returnStock: false }) as Promise<GenerationDebitNoteResult>
 }
 
 /** Read-only Generation lifecycle/artifact state; never enters the ZATCA route. */

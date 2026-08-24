@@ -94,6 +94,22 @@ export function resolveCreditNoteEligibility(input: {
   return { allowed: false, code: CREDIT_NOTE_POLICY_ERRORS.integrationNotAccepted }
 }
 
+/** Generation Debit Notes use the same branch/lifecycle boundary as Credit
+ * Notes, but are intentionally never eligible for Integration invoices. */
+export function resolveDebitNoteEligibility(input: {
+  parentRegime: FiscalRegime | null | undefined
+  parentLifecycle: string | null | undefined
+  currentRegime: FiscalRegime | null | undefined
+}): CreditNoteEligibility {
+  if (input.parentRegime !== 'generation') return { allowed: false, code: FISCAL_POLICY_ERRORS.invalid }
+  if (input.currentRegime === 'integration') return { allowed: false, code: FISCAL_POLICY_ERRORS.crossRegimeNote }
+  if (input.currentRegime !== 'generation') return { allowed: false, code: FISCAL_POLICY_ERRORS.invalid }
+  if (input.parentLifecycle !== 'generation_issued') {
+    return { allowed: false, code: CREDIT_NOTE_POLICY_ERRORS.generationFinalizationRequired }
+  }
+  return { allowed: true, regime: 'generation' }
+}
+
 export function isGenerationIssued(document: FiscalDocumentForPolicy): boolean {
   return document.fiscalRegime === 'generation'
     && document.lifecycleState === 'generation_issued'

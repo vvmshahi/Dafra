@@ -29,6 +29,7 @@ interface InvoiceHealthRow {
   zatca_invoice_type: ZatcaDocumentType
   zatca_status: ZatcaDocumentStatus
   zatca_submitted_at: string | null
+  fiscal_regime_at_issue?: 'generation' | 'integration' | null
   status: string
 }
 
@@ -154,7 +155,7 @@ export default function OperationsPage() {
             .order('name', { ascending: true }),
           supabase
             .from('invoices')
-            .select('id, branch_id, invoice_number, invoice_date, created_at, zatca_invoice_type, zatca_status, zatca_submitted_at, status')
+            .select('id, branch_id, invoice_number, invoice_date, created_at, zatca_invoice_type, zatca_status, zatca_submitted_at, fiscal_regime_at_issue, status')
             .eq('tenant_id', tenantId)
             .neq('status', 'cancelled')
             .in('zatca_status', ['pending', 'failed', 'reported', 'cleared'])
@@ -173,7 +174,7 @@ export default function OperationsPage() {
         if (invoiceRes.error) throw invoiceRes.error
 
         setBranches((branchRes.data ?? []) as BranchRow[])
-        setInvoices((invoiceRes.data ?? []) as InvoiceHealthRow[])
+        setInvoices((invoiceRes.data ?? []).filter((row: any) => row.fiscal_regime_at_issue !== 'generation') as InvoiceHealthRow[])
 
         if (productionRes.error) {
           setProductionRows([])

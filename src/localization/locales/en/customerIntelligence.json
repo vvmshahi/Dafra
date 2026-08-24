@@ -72,6 +72,7 @@
     "simplified": "Simplified invoice",
     "standard": "Standard invoice",
     "credit_note": "Credit note",
+    "debit_note": "Debit note",
     "posted": "Completed",
     "openDocument": "Open {{reference}}",
     "page": "Page {{page}} of {{pages}}"

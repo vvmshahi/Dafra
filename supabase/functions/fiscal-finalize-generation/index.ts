@@ -180,7 +180,7 @@ Deno.serve(async req => {
       })
       if (createError || !created?.invoice_id) {
         const innerCode = errorCode(createError ?? GENERATION_ERRORS.FINALIZATION_FAILED)
-        const code = ['FISCAL_POLICY_CHANGED', 'CROSS_REGIME_NOTE_NOT_ALLOWED', 'IDEMPOTENCY_CONFLICT', 'GENERATION_VALIDATION_FAILED', 'GENERATION_POLICY_INVALID'].includes(innerCode)
+        const code = ['FISCAL_POLICY_CHANGED', 'CROSS_REGIME_NOTE_NOT_ALLOWED', 'IDEMPOTENCY_CONFLICT', 'GENERATION_VALIDATION_FAILED', 'GENERATION_POLICY_INVALID', 'GENERATION_DEBIT_LIMIT_EXCEEDED'].includes(innerCode)
           ? innerCode
           : 'GENERATION_NOTE_CREATE_FAILED'
         return diagnosticResponse({

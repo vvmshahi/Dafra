@@ -72,6 +72,7 @@
     "simplified": "فاتورة مبسطة",
     "standard": "فاتورة قياسية",
     "credit_note": "إشعار دائن",
+    "debit_note": "إشعار مدين",
     "posted": "مرحّل",
     "openDocument": "فتح {{reference}}",
     "page": "الصفحة {{page}} من {{pages}}"
