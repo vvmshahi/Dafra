@@ -17,6 +17,7 @@ import { resolveEffectiveVatTreatment } from '@/lib/pricing/vat'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { saudiDateStr, toSaudiTime } from '@/lib/utils/date'
 import {
+  finalizeGenerationInvoice,
   finalizeInvoiceForZatca,
   getZatcaFinalizationCapabilities,
   getInvoiceZatcaOutputState,
@@ -216,6 +217,8 @@ interface ReceiptData {
   finalizationError: string | null
   retryFinalizationAllowed: boolean
   sandboxGenerated: boolean
+  generationCheckoutIdempotencyKey: string | null
+  generationPolicyRevision: number | null
   reportingDisplayState: string
   atomicSnapshot: boolean
   isDemo: boolean
@@ -2491,7 +2494,9 @@ export default function POSPage() {
     const userId = user?.id
     const tenantId = profile?.tenant_id
     const branchId = profile?.branch_id
-    if (!userId || !tenantId || !branchId || branch?.zatca_environment === 'sandbox') return
+    if (!userId || !tenantId || !branchId
+      || branch?.zatca_environment === 'sandbox'
+      || branch?.fiscal_regime === 'generation') return
 
     let cancelled = false
     void getZatcaFinalizationCapabilities(branchId)
@@ -2512,7 +2517,7 @@ export default function POSPage() {
       })
 
     return () => { cancelled = true }
-  }, [user?.id, profile?.tenant_id, profile?.branch_id, branch?.zatca_environment])
+  }, [user?.id, profile?.tenant_id, profile?.branch_id, branch?.zatca_environment, branch?.fiscal_regime])
 
   // ── Persist cart ─────────────────────────────────────────────────────────
 
@@ -3014,12 +3019,16 @@ export default function POSPage() {
       const sandboxDemo = documentDecision.checkoutPath === 'sandbox'
         && documentDecision.isDemo === false
         && documentDecision.nonFiscal === false
+      const generationCheckoutRequested = documentDecision.checkoutPath === 'generation'
+        && documentDecision.fiscalRegime === 'generation'
+        && documentDecision.fiscalActivationState === 'generation_active'
       const standardRequested = documentDecision
         ? documentDecision.documentType === 'standard'
         : selectedCust?.customer_type === 'business'
           && /^3[0-9]{13}3$/.test(selectedCust.vat_number ?? '')
       const atomicRequested = !nonFiscalDemo
         && !sandboxDemo
+        && !generationCheckoutRequested
         && payMethod !== 'credit'
         && documentDecision?.documentType === 'simplified'
         && documentDecision.checkoutPath === 'atomic'
@@ -3257,6 +3266,23 @@ export default function POSPage() {
           } else {
             throw new Error('SANDBOX_SUBMISSION_ROUTE_UNAVAILABLE')
           }
+        } else if (generationCheckoutRequested) {
+          const expectedPolicyRevision = documentDecision.fiscalPolicyRevision
+          if (!expectedPolicyRevision) throw new Error('GENERATION_POLICY_REVISION_REQUIRED')
+          const finalization = await finalizeGenerationInvoice({
+            invoiceId: checkout.invoice_id,
+            branchId: branch.id,
+            checkoutIdempotencyKey: idempotencyKey,
+            expectedPolicyRevision,
+          })
+          finalizationStatus = finalization.finalizationStatus
+          artifactStage = finalization.artifactStage
+          documentKind = finalization.documentKind ?? documentKind
+          finalQrCode = finalization.qrCode
+          canPrintCustomerCopy = finalization.canPrint
+          if (!finalization.ok) {
+            throw new Error(finalization.error ?? 'Generation invoice finalization failed')
+          }
         } else if (productionCheckoutMode === 'legacy') {
           preOutputSubmission = await submitInvoiceForBranch({
             invoiceId: checkout.invoice_id,
@@ -3435,8 +3461,10 @@ export default function POSPage() {
         finalizationError,
         retryFinalizationAllowed,
         sandboxGenerated: sandboxDemo,
+        generationCheckoutIdempotencyKey: generationCheckoutRequested ? idempotencyKey : null,
+        generationPolicyRevision: generationCheckoutRequested ? documentDecision.fiscalPolicyRevision : null,
         reportingDisplayState: atomicCheckoutResult?.reportingDisplayState
-          ?? (nonFiscalDemo ? 'demo_non_fiscal' : sandboxDemo ? finalizationStatus : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
+          ?? (nonFiscalDemo ? 'demo_non_fiscal' : sandboxDemo ? finalizationStatus : generationCheckoutRequested ? finalizationStatus : isB2BInvoice ? 'clearance_pending' : 'reporting_pending'),
         atomicSnapshot: Boolean(atomicCheckoutResult),
         isDemo: nonFiscalDemo,
         sandboxDemo,
@@ -3704,6 +3732,29 @@ export default function POSPage() {
         } : current)
         if (finalized) toast.success(t('pos:zatca.success'))
         else toast.warning(t('pos:zatca.saleCompletedAttention'))
+        return
+      }
+      if (branch.fiscal_regime === 'generation') {
+        if (!receipt.generationCheckoutIdempotencyKey || !receipt.generationPolicyRevision) {
+          throw new Error('GENERATION_RETRY_CONTEXT_UNAVAILABLE')
+        }
+        const finalized = await finalizeGenerationInvoice({
+          invoiceId: receipt.invoiceId,
+          branchId: branch.id,
+          checkoutIdempotencyKey: receipt.generationCheckoutIdempotencyKey,
+          expectedPolicyRevision: receipt.generationPolicyRevision,
+        })
+        if (!finalized.ok) throw new Error(finalized.error ?? 'Generation invoice finalization is still pending.')
+        setReceipt(current => current ? {
+          ...current,
+          zatcaQrCode: finalized.qrCode ?? '',
+          canPrint: finalized.canPrint,
+          finalizationStatus: finalized.finalizationStatus,
+          artifactStage: finalized.artifactStage,
+          documentKind: finalized.documentKind ?? current.documentKind,
+          finalizationError: null,
+        } : current)
+        toast.success(t('pos:zatca.success'))
         return
       }
       const currentOutput = await getInvoiceZatcaOutputState({

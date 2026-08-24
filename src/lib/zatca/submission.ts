@@ -19,7 +19,7 @@ export const ZATCA_OUTPUT_STATE_READ_VERSION = '2.0.0'
 export const ZATCA_FINALIZATION_SCHEMA_VERSION = 2
 export type ZatcaCheckoutMode = 'legacy' | 'v2'
 export type ZatcaDocumentKind = 'simplified' | 'standard'
-export type PosCheckoutPath = 'atomic' | 'legacy' | 'demo' | 'sandbox'
+export type PosCheckoutPath = 'atomic' | 'legacy' | 'demo' | 'sandbox' | 'generation'
 export type ZatcaFunctionalityMap = '0100' | '1000' | '1100'
 
 export interface PosCheckoutDocumentDecision {
@@ -38,6 +38,9 @@ export interface PosCheckoutDocumentDecision {
   productionConnected: boolean
   isDemo: boolean
   nonFiscal: boolean
+  fiscalRegime: 'generation' | 'integration' | null
+  fiscalActivationState: string | null
+  fiscalPolicyRevision: number | null
   demoMode: 'not_demo' | 'non_fiscal' | 'sandbox_compliance'
 }
 export type ZatcaCapabilityAcknowledgementStatus =
@@ -163,6 +166,7 @@ export async function resolvePosCheckoutDocument(
     || data?.checkoutPath === 'legacy'
     || data?.checkoutPath === 'demo'
     || data?.checkoutPath === 'sandbox'
+    || data?.checkoutPath === 'generation'
     ? data.checkoutPath
     : null
   const capability = data?.capability === '0100'
@@ -197,6 +201,15 @@ export async function resolvePosCheckoutDocument(
     productionConnected: data?.productionConnected === true,
     isDemo: data?.isDemo === true,
     nonFiscal: data?.nonFiscal === true,
+    fiscalRegime: data?.fiscalRegime === 'generation' || data?.fiscalRegime === 'integration'
+      ? data.fiscalRegime
+      : null,
+    fiscalActivationState: typeof data?.fiscalActivationState === 'string'
+      ? data.fiscalActivationState
+      : null,
+    fiscalPolicyRevision: Number.isInteger(data?.fiscalPolicyRevision)
+      ? data.fiscalPolicyRevision
+      : null,
     demoMode: data?.demoMode === 'non_fiscal' || data?.demoMode === 'sandbox_compliance'
       ? data.demoMode
       : 'not_demo',
@@ -339,6 +352,46 @@ export async function finalizeInvoiceForZatca(params: {
     canShare: data?.canShare === true,
     retryAvailable: data?.retryAvailable === true,
     reconciliationRequired: data?.reconciliationRequired === true,
+    qrCode: typeof data?.qrCode === 'string' ? data.qrCode : null,
+    error: typeof data?.error === 'string' ? data.error : null,
+  }
+}
+
+/**
+ * Finalizes a Generation invoice through the fiscal-domain finalizer. This
+ * path deliberately does not invoke the protected ZATCA submitter or read
+ * Production capability/acknowledgement state.
+ */
+export async function finalizeGenerationInvoice(params: {
+  invoiceId: string
+  branchId: string
+  checkoutIdempotencyKey: string
+  expectedPolicyRevision: number
+}): Promise<ZatcaFinalizationResult> {
+  const { data, error } = await supabase.functions.invoke('fiscal-finalize-generation', {
+    body: {
+      invoice_id: params.invoiceId,
+      branch_id: params.branchId,
+      checkout_idempotency_key: params.checkoutIdempotencyKey,
+      expected_policy_revision: params.expectedPolicyRevision,
+    },
+  })
+  if (error) throw new Error(error.message)
+  const finalizationStatus = String(
+    data?.lifecycleState === 'generation_issued' ? 'generation_issued' : 'finalization_failed',
+  )
+  return {
+    ok: data?.lifecycleState === 'generation_issued' && data?.canPrint === true,
+    invoiceStatus: 'posted',
+    finalizationStatus,
+    artifactStage: String(data?.artifactStage ?? 'none'),
+    documentKind: data?.documentKind === 'simplified' || data?.documentKind === 'standard'
+      ? data.documentKind
+      : null,
+    canPrint: data?.canPrint === true,
+    canShare: data?.canShare === true,
+    retryAvailable: false,
+    reconciliationRequired: false,
     qrCode: typeof data?.qrCode === 'string' ? data.qrCode : null,
     error: typeof data?.error === 'string' ? data.error : null,
   }

@@ -56,7 +56,7 @@ assert.match(client, /ZATCA_OUTPUT_STATE_READ_VERSION = '2\.0\.0'/)
 assert.match(edge, /OUTPUT_STATE_READ_CLIENT_VERSIONS = new Set\(\['2\.0\.0', FINALIZATION_CLIENT_VERSION\]\)/)
 
 const classifierIndex = pos.indexOf('await resolvePosCheckoutDocument(branch.id, customerId)')
-const checkoutIndex = pos.indexOf("rpc('pos_checkout'")
+const checkoutIndex = pos.indexOf("'pos_checkout'")
 assert.ok(
   classifierIndex > 0 && classifierIndex < checkoutIndex,
   'the authoritative server document decision must precede checkout',

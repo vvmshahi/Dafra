@@ -170,10 +170,10 @@ const posHandshake = pos.slice(
   pos.indexOf('// ── Persist cart'),
 )
 assert.match(posHandshake, /getZatcaFinalizationCapabilities\(branchId\)/)
-assert.match(posHandshake, /if \(!userId \|\| !tenantId \|\| !branchId\) return/)
+assert.match(posHandshake, /if \(!userId \|\| !tenantId \|\| !branchId[\s\S]*branch\?\.fiscal_regime === 'generation'\) return/)
 assert.match(
   posHandshake,
-  /\[user\?\.id, profile\?\.tenant_id, profile\?\.branch_id\]/,
+  /\[user\?\.id, profile\?\.tenant_id, profile\?\.branch_id, branch\?\.zatca_environment, branch\?\.fiscal_regime\]/,
 )
 
 const capabilityRoute = edge.slice(
