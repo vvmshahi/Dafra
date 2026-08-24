@@ -484,13 +484,34 @@ export default function InvoicesPage() {
         if (normalInvoiceIds.length > 0) {
           const { data: creditNotes } = await supabase
             .from('invoices')
-            .select('id, invoice_number, original_invoice_id, created_at')
+            .select(`
+              id, branch_id, session_id, invoice_number, invoice_reference, zatca_invoice_type, invoice_date, created_at, status, is_demo,
+              subtotal, tax_amount, total_amount, payment_method, payment_status, zatca_status,
+              fiscal_regime_at_issue, fiscal_lifecycle_state,
+              customers(name),
+              invoice_items(id, quantity),
+              payments(method),
+              original_invoice_id
+            `)
             .eq('tenant_id', tid)
             .eq('branch_id', activeScope.branchId)
             .in('original_invoice_id', normalInvoiceIds)
             .eq('zatca_invoice_type', 'credit_note')
             .neq('status', 'cancelled')
             .order('created_at', { ascending: false })
+
+          // A current/previous session owns the sale session, while its
+          // Generation Credit Notes intentionally have no independent
+          // session_id. Include those existing notes in the document/KPI
+          // surface by their immutable parent linkage; date-range scopes
+          // already returned the notes in the base query.
+          if (activeScope.sessionId) {
+            const existingIds = new Set(invoices.map((invoice: any) => invoice.id))
+            for (const creditNote of creditNotes ?? []) {
+              if (!existingIds.has((creditNote as any).id)) invoices.push(creditNote)
+            }
+            invoices.sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+          }
 
           for (const creditNote of creditNotes ?? []) {
             const originalId = (creditNote as any).original_invoice_id

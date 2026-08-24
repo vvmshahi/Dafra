@@ -48,7 +48,7 @@ assert.deepEqual(saudiDateRangeUtc('2026-07-25', '2026-07-27'), {
 
 assert.match(page, /const effectiveBranchId = profile\?\.role === 'branch'[\s\S]*profile\.branch_id[\s\S]*selectedOwnerBranchId/)
 assert.match(page, /usePosSession\(effectiveBranchId \?\? undefined, profile\?\.tenant_id, undefined\)/)
-assert.match(page, /\.from\('branches'\)[\s\S]*\.select\('id, name, name_ar(?:, fiscal_regime)?'\)[\s\S]*\.eq\('tenant_id', profile\.tenant_id\)/)
+assert.match(page, /\.from\('branches'\)[\s\S]*\.select\('id, name, name_ar(?:, fiscal_regime, fiscal_policy_revision)?'\)[\s\S]*\.eq\('tenant_id', profile\.tenant_id\)/)
 assert.match(page, /setSelectedOwnerBranchId\(current =>[\s\S]*branches\[0\]\?\.id/)
 assert.match(page, /value=\{selectedOwnerBranchId \?\? ''\}[\s\S]*onChange=\{event => setSelectedOwnerBranchId/)
 assert.match(page, /branchId: effectiveBranchId/)

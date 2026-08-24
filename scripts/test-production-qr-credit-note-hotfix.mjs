@@ -25,6 +25,9 @@ check(parentIds.length === 1 && parentIds[0] === parent.id, 'history fixture res
 check(history.length === 2 && history.some(row => row.id === note.id) && history.some(row => row.id === parent.id), 'history fixture keeps parent and Credit Note as separate rows')
 check(invoiceList.includes('const relatedParentIds = Array.from(new Set('), 'invoice list resolves related parent ids')
 check(invoiceList.includes(".in('id', relatedParentIds)"), 'invoice list reads linked parents without mutation')
+check(invoiceList.includes('if (activeScope.sessionId)'), 'session-scoped invoice list resolves notes through their parent')
+check(invoiceList.includes(".in('original_invoice_id', normalInvoiceIds)"), 'session-scoped KPI reads existing linked Credit Notes')
+check(invoiceList.includes('if (!existingIds.has((creditNote as any).id)) invoices.push(creditNote)'), 'session-scoped notes are added without duplicate rows')
 
 // Canonical signed-value fixture: gross remains positive issued sales, Credit
 // Notes are displayed as absolute deductions, and net/VAT are signed totals.
@@ -46,6 +49,7 @@ check(generationFinalizer.includes('qrCode: issued ? invoice.fiscal_qr_payload :
 check(migration.includes('reporting_effective_invoice_session_id'), 'reporting migration resolves parent session')
 check(migration.includes('get_register_tender_netting(uuid[])'), 'reporting migration patches tender aggregation')
 check(migration.includes('get_register_session_summary_before_refund_netting(uuid,uuid)'), 'reporting migration patches session summary')
+check(migration.includes("E'      i.session_id,\\n      i.zatca_invoice_type::text AS document_type,'"), 'reporting migration uses executable newline replacement')
 check(!migration.match(/(UPDATE|DELETE|INSERT)\s+INTO\s+public\.(invoices|invoice_items|payments|payment_refunds)/i), 'hotfix migration does not rewrite financial rows')
 
 console.log(`Production QR + Credit Note hotfix contract passed (${passed} deterministic checks)`)

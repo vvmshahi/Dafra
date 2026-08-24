@@ -61,7 +61,7 @@ assert.match(dashboard, /const paymentTotal = \(session\?\.cashTotal \?\? 0\) \+
 assert.match(dashboard, /const cashShare = paymentTotal > 0/)
 assert.match(dashboard, /const cardShare = paymentTotal > 0/)
 assert.match(dashboard, /formatDisplayPercent\(share, i18n\.language\)/)
-assert.match(dashboard, /h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-white\/14/)
+assert.match(dashboard, /h-px min-w-10 flex-1 overflow-hidden rounded-full bg-white\/14/)
 assert.equal((dashboard.match(/visual: paymentVisual\(/g) ?? []).length, 2, 'only Cash and Card may render payment-share microvisuals')
 assert.match(dashboard, /kpi\.averageSale/)
 const telemetrySource = dashboard.slice(dashboard.indexOf('const telemetry'), dashboard.indexOf('return (', dashboard.indexOf('const telemetry')))

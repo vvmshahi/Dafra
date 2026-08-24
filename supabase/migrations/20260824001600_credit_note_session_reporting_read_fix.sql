@@ -53,8 +53,8 @@ BEGIN
   ) INTO v_definition;
   v_patched := replace(
     v_definition,
-    '      i.session_id,\n      i.zatca_invoice_type::text AS document_type,',
-    '      public.reporting_effective_invoice_session_id(i.id, i.session_id) AS session_id,\n      i.zatca_invoice_type::text AS document_type,'
+    E'      i.session_id,\n      i.zatca_invoice_type::text AS document_type,',
+    E'      public.reporting_effective_invoice_session_id(i.id, i.session_id) AS session_id,\n      i.zatca_invoice_type::text AS document_type,'
   );
   IF v_patched = v_definition THEN
     RAISE EXCEPTION 'CREDIT_NOTE_SESSION_TENDER_TARGET_NOT_FOUND';
