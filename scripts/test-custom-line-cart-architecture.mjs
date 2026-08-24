@@ -262,6 +262,7 @@ try {
     'supabase/migrations/20260824001200_generation_notes_b3_enum_cast_hotfix.sql',
     'supabase/migrations/20260824001300_generation_notes_b3_payment_status_enum_cast_hotfix.sql',
     'supabase/migrations/20260824001400_generation_debit_notes_accounting.sql',
+    'supabase/migrations/20260824001500_fix_legacy_custom_line_effective_entitlement.sql',
   ])
   assert.equal(
     changedPaths.some(path => path.startsWith('supabase/migrations/') && !permittedLineageRepairPaths.has(path)),

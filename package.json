@@ -8,7 +8,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:modern-statement-a4 && npm run test:accounting-ledger-a4 && npm run test:contemporary-modular-a4 && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-server-checkout && npm run test:p0-saved-checkout-recovery && npm run test:source-aware-reporting-credit-hardening",
+    "test": "npm run test:register-session-netting && npm run test:final-web-printing-refinements && npm run test:modern-statement-a4 && npm run test:accounting-ledger-a4 && npm run test:contemporary-modular-a4 && npm run test:thermal-receipt-layouts && npm run test:thermal-preview-parity && npm run test:customer-receivables && npm run test:credit-pos-sandbox-demo && npm run test:receivables-xlsx && npm run test:branch-billing-profile-ux && npm run test:profile-aware-catalogue-navigation && npm run test:saved-services-catalogue && npm run test:catalogue-bulk-export && npm run test:catalogue-bulk-import && npm run test:custom-line-cart-architecture && npm run test:custom-line-persistence && npm run test:custom-line-server-checkout && npm run test:p0-saved-checkout-recovery && npm run test:source-aware-reporting-credit-hardening",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -113,6 +113,7 @@
     "test:saved-services-catalogue": "node --experimental-strip-types scripts/test-saved-services-catalogue.mjs",
     "test:custom-line-cart-architecture": "node scripts/test-custom-line-cart-architecture.mjs",
     "test:custom-line-server-checkout": "node scripts/test-custom-line-server-checkout.mjs",
+    "test:custom-line-persistence": "node scripts/test-custom-line-persistence.mjs",
     "test:source-aware-reporting-credit-hardening": "node scripts/test-source-aware-reporting-credit-hardening.mjs",
     "test:product-editor-modal-ui": "node scripts/test-product-editor-modal-ui.mjs",
     "test:product-editor-compact-ui": "node scripts/test-product-editor-compact-ui.mjs",
