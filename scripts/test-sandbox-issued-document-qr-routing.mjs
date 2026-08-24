@@ -46,7 +46,7 @@ for (const [name, source] of [['invoice detail', detail], ['receipt print', rece
     `${name} reads the authenticated Sandbox status output`)
   assert.match(source, /selectStoredInvoiceQr\(null, 'sandbox'/,
     `${name} renders only the returned Sandbox QR payload`)
-  assert.match(source, /sandboxDocument \? sandboxValidated/,
+  assert.match(source, /sandboxDocument\s*\?\s*sandboxValidated/,
     `${name} permits document output only after the accepted Sandbox status response`)
   assert.match(source, /qrImageUrl: qrDataUrl/,
     `${name} passes the same rendered payload into its document renderer`)

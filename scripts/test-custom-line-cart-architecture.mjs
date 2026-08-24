@@ -244,6 +244,24 @@ try {
     'supabase/migrations/20260804000250_restore_zatca_sandbox_credentials_prerequisite.sql',
     'supabase/migrations/20260804000600_trading_sandbox_v2.sql',
     'supabase/migrations/20260805000200_persist_zatca_capability_selection.sql',
+    // Release migration-history reconciliation and the reviewed Generation
+    // rollout migrations are intentional repository changes. They do not
+    // modify the protected custom-line/cart architecture contract.
+    'supabase/migrations/20260822000100_sandbox_clearance_finalization.sql',
+    'supabase/migrations/20260822000200_recover_invalid_optional_a4_artwork.sql',
+    'supabase/migrations/20260824000100_sandbox_standard_clearance_gate.sql',
+    'supabase/migrations/20260824000200_generation_fiscal_core_b1.sql',
+    'supabase/migrations/20260824000300_generation_finalizer_b2.sql',
+    'supabase/migrations/20260824000400_generation_notes_b3.sql',
+    'supabase/migrations/20260824000500_generation_onboarding_c.sql',
+    'supabase/migrations/20260824000600_owner_account_provisioning_v2.sql',
+    'supabase/migrations/20260824000700_fix_existing_v2_first_branch_completion.sql',
+    'supabase/migrations/20260824000800_generation_pos_checkout_capability_gate.sql',
+    'supabase/migrations/20260824000900_generation_invoice_read_surface.sql',
+    'supabase/migrations/20260824001000_generation_snapshot_rpc_service_access.sql',
+    'supabase/migrations/20260824001200_generation_notes_b3_enum_cast_hotfix.sql',
+    'supabase/migrations/20260824001300_generation_notes_b3_payment_status_enum_cast_hotfix.sql',
+    'supabase/migrations/20260824001400_generation_debit_notes_accounting.sql',
   ])
   assert.equal(
     changedPaths.some(path => path.startsWith('supabase/migrations/') && !permittedLineageRepairPaths.has(path)),
@@ -269,6 +287,35 @@ try {
     'src/lib/zatca/atomicCheckout.ts',
     'src/lib/zatca/authenticatedEdge.ts',
     'src/lib/zatca/submission.ts',
+    // Reviewed Generation/Sandbox release paths. These are explicit source
+    // changes outside the custom-line/cart runtime and remain allowlisted by
+    // filename so unrelated protected-path drift still fails this contract.
+    'supabase/functions/_shared/fiscal/generation_finalizer_preflight.mjs',
+    'supabase/functions/_shared/fiscal/generation_qr.mjs',
+    'supabase/functions/_shared/fiscal/generation_validation.mjs',
+    'supabase/functions/_shared/fiscal/tlv.mjs',
+    'supabase/functions/_shared/zatca/buyer_identity.mjs',
+    'supabase/functions/_shared/zatca/certificate_normalizer.mjs',
+    'supabase/functions/_shared/zatca/samples.ts',
+    'supabase/functions/_shared/zatca/sandbox_compliance_observability.mjs',
+    'supabase/functions/_shared/zatca/sandbox_credential_binding.mjs',
+    'supabase/functions/_shared/zatca/sandbox_mock_operational_policy.mjs',
+    'supabase/functions/_shared/zatca/sandbox_reservation_recovery.mjs',
+    'supabase/functions/_shared/zatca/sandbox_stale_operation.mjs',
+    'supabase/functions/_shared/zatca/sandbox_submission_auth.mjs',
+    'supabase/functions/_shared/zatca/x509_structural.mjs',
+    'supabase/functions/create-owner-account-v2/index.ts',
+    'supabase/functions/create-owner-account/index.ts',
+    'supabase/functions/fiscal-finalize-generation/index.ts',
+    'supabase/functions/provision-first-branch/index.ts',
+    'supabase/functions/resolve-zatca-connection/index.ts',
+    'supabase/functions/zatca-onboard-sandbox-demo/index.ts',
+    'supabase/functions/zatca-submit-sandbox-demo/index.ts',
+    'src/lib/zatca/api.ts',
+    'src/lib/zatca/creditNotePresentation.mjs',
+    'src/lib/zatca/fiscalDocumentScope.ts',
+    'src/lib/zatca/qrDisplay.mjs',
+    'src/pages/invoices/CreateGenerationDebitNoteModal.tsx',
   ])
   for (const protectedPath of [
     'supabase/functions/',

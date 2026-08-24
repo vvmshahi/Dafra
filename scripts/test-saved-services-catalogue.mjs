@@ -143,8 +143,8 @@ assert.ok((pos.match(/t\('itemType\.service'\)/g) ?? []).length >= 2)
 // while the existing documents render snapshot item names, quantities, VAT, and totals.
 assert.match(productsPage, /\{product\.is_service && <ServiceBadge \/>\}/)
 assert.match(productsPage, /\{!product\.is_service && \(/)
-assert.match(creditNote, /line\.item\.product_id && line\.item\.track_stock && !line\.item\.is_service/)
-assert.match(creditNote, /line\.item\.is_service \|\| !line\.item\.track_stock \|\| !line\.item\.product_id/)
+assert.match(creditNote, /line\.item\.product_id\s*&&\s*line\.item\.stock_tracked_at_sale === true\s*&&\s*line\.item\.service_item_at_sale !== true/)
+assert.match(creditNote, /line\.item\.service_item_at_sale === true\s*\|\|\s*line\.item\.stock_tracked_at_sale !== true\s*\|\|\s*!line\.item\.product_id/)
 for (const source of [branchDashboard, branchDetail, stockTab]) {
   assert.match(source, /\.eq\('is_service', false\)/)
 }

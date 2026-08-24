@@ -118,8 +118,8 @@ matches(receiptPage, /from\('invoice_items'\)\.select\('\*'\)/, 'receipt page mu
 excludes(documentAdapter, /item\.product_id/, 'document adapter must not require product identity')
 matches(zatcaSubmit, /lines: items\.map\(\(it: any, i: number\) => \(\{[\s\S]*name: it\.name/, 'ZATCA line builder must consume item snapshots')
 excludes(zatcaSubmit, /invoice_items\([^)]*product_id/, 'ZATCA invoice-item reads must not require product_id')
-matches(creditNote, /line\.item\.product_id && line\.item\.track_stock && !line\.item\.is_service/, 'credit UI must exclude product-null custom lines from stock returns')
-matches(creditNote, /item\.is_service \|\| !item\.track_stock \|\| !item\.product_id/, 'credit UI must mark product-null lines as no-inventory impact')
+matches(creditNote, /line\.item\.product_id\s*&&\s*line\.item\.stock_tracked_at_sale === true\s*&&\s*line\.item\.service_item_at_sale !== true/, 'credit UI must exclude product-null custom lines from stock returns')
+matches(creditNote, /line\.item\.service_item_at_sale === true\s*\|\|\s*line\.item\.stock_tracked_at_sale !== true\s*\|\|\s*!line\.item\.product_id/, 'credit UI must mark product-null lines as no-inventory impact')
 
 const changedPaths = [
   ...execFileSync('git', ['diff', '--name-only', BASE, SCOPE_TIP, '--'], { encoding: 'utf8' })
