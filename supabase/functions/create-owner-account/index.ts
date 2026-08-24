@@ -70,6 +70,7 @@ Deno.serve(async (req: Request) => {
     const companyName = typeof body.company_name === 'string' ? body.company_name.trim() : ''
     const branchCount = body.branch_count
     const paymentType = body.payment_type
+    if (typeof body.is_demo !== 'boolean') return json({ error: 'Account type is required.' }, 400)
     if (!companyName || !normalizedEmail || typeof body.plan_id !== 'string'
       || !Number.isInteger(branchCount) || branchCount < 1 || branchCount > 100
       || !['one_time', 'monthly', 'lifetime_free'].includes(paymentType)) {
@@ -86,6 +87,7 @@ Deno.serve(async (req: Request) => {
       phone: body.phone?.trim() || null,
       city: body.city?.trim() || null,
       business_type: body.business_type === 'service' ? 'service' : 'trading',
+      is_demo: body.is_demo,
       branch_count: branchCount,
       payment_type: paymentType,
       duration_months: Number.isInteger(body.duration_months) ? body.duration_months : 0,
@@ -104,6 +106,7 @@ Deno.serve(async (req: Request) => {
       business_type: safePayload.business_type, branch_count: safePayload.branch_count,
       payment_type: safePayload.payment_type, duration_months: safePayload.duration_months,
       pay_method: safePayload.pay_method, pay_ref: safePayload.pay_ref, notes: safePayload.notes,
+      is_demo: safePayload.is_demo,
       fiscal_regime: safePayload.fiscal_regime,
     }))
     const auditBase = {
