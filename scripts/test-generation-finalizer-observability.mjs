@@ -37,7 +37,7 @@ assert.equal(classifyGenerationFinalizerPreflight(valid), null, 'valid Generatio
 for (const required of [
   'failure_stage', 'correlation_id', 'generation_finalizer_failure',
   'expected_policy_revision', 'checkout_idempotency_key', 'upstream_error',
-  'GENERATION_POLICY_INVALID', 'finalization_rpc',
+  'GENERATION_POLICY_INVALID', 'GENERATION_NOTE_CREATE_FAILED', 'note_create_rpc', 'finalization_rpc',
 ]) assert.match(edge, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `edge contains ${required}`)
 
 for (const forbidden of ['zatca-submit', 'zatca_counter_number', 'previous_hash', 'ICV', 'PIH']) {

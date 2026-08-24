@@ -23,6 +23,7 @@ function sha256Hex(value: string): Promise<string> {
 
 function errorCode(error: unknown): string {
   const message = String((error as { message?: unknown })?.message ?? error)
+  if (message.includes('GENERATION_NOTE_CREATE_FAILED')) return 'GENERATION_NOTE_CREATE_FAILED'
   if (message.includes('FISCAL_POLICY_CHANGED')) return 'FISCAL_POLICY_CHANGED'
   if (message.includes('IDEMPOTENCY_CONFLICT')) return 'IDEMPOTENCY_CONFLICT'
   if (message.includes('BRANCH_ACCESS_DENIED')) return 'BRANCH_ACCESS_DENIED'
@@ -178,8 +179,20 @@ Deno.serve(async req => {
         },
       })
       if (createError || !created?.invoice_id) {
-        const code = errorCode(createError ?? GENERATION_ERRORS.FINALIZATION_FAILED)
-        return response({ error: code }, code === 'FISCAL_POLICY_CHANGED' || code === 'CROSS_REGIME_NOTE_NOT_ALLOWED' || code === 'IDEMPOTENCY_CONFLICT' ? 409 : 422)
+        const innerCode = errorCode(createError ?? GENERATION_ERRORS.FINALIZATION_FAILED)
+        const code = ['FISCAL_POLICY_CHANGED', 'CROSS_REGIME_NOTE_NOT_ALLOWED', 'IDEMPOTENCY_CONFLICT', 'GENERATION_VALIDATION_FAILED', 'GENERATION_POLICY_INVALID'].includes(innerCode)
+          ? innerCode
+          : 'GENERATION_NOTE_CREATE_FAILED'
+        return diagnosticResponse({
+          correlationId,
+          failureStage: 'note_create_rpc',
+          failureCode: code,
+          invoiceId: parent_invoice_id ?? invoice_id ?? null,
+          branchId: branch_id,
+          expectedPolicyRevision: expected_policy_revision,
+          checkoutIdempotencyKey: checkout_idempotency_key,
+          error: createError,
+        })
       }
       invoice_id = created.invoice_id
     }
