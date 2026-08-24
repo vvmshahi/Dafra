@@ -6,6 +6,7 @@ import { validateGenerationInvoiceSnapshot, GENERATION_ERRORS } from '../supabas
 
 const migration = await readFile(new URL('../supabase/migrations/20260824000400_generation_notes_b3.sql', import.meta.url), 'utf8')
 const hotfix = await readFile(new URL('../supabase/migrations/20260824001200_generation_notes_b3_enum_cast_hotfix.sql', import.meta.url), 'utf8')
+const paymentStatusHotfix = await readFile(new URL('../supabase/migrations/20260824001300_generation_notes_b3_payment_status_enum_cast_hotfix.sql', import.meta.url), 'utf8')
 const finalizer = await readFile(new URL('../supabase/functions/fiscal-finalize-generation/index.ts', import.meta.url), 'utf8')
 const validation = await readFile(new URL('../supabase/functions/_shared/fiscal/generation_validation.mjs', import.meta.url), 'utf8')
 let count = 0
@@ -25,6 +26,7 @@ check(migration.includes('IDEMPOTENCY_CONFLICT'), 'conflicting replay is rejecte
 check(migration.includes('generation_note_counters_v1'), 'note numbering is server-owned')
 check(migration.includes("CASE WHEN v_kind = 'credit_note' THEN '381' ELSE '383' END"), 'CN/DN type codes are distinct')
 check(hotfix.includes('v_kind::public.invoice_type'), 'note document type is explicitly cast to the invoice enum')
+check(paymentStatusHotfix.includes('public.payment_status'), 'note payment status is explicitly cast to the payment enum')
 check(migration.includes("CASE WHEN v_kind = 'credit_note' THEN 'refunded' ELSE 'pending' END"), 'payment semantics are type-aware')
 check(migration.includes('payment_refunds'), 'credit notes create refund ledger entries')
 check(migration.includes('pos_stock_movements'), 'credit stock return uses canonical stock ledger')
