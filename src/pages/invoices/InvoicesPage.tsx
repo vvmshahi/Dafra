@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import type { InvoiceType, PaymentMethod, ZatcaStatus } from '@/types/database'
-import { resolveCreditNoteEligibility, resolveDebitNoteEligibility } from '@/lib/fiscal/domain'
+import { resolveCreditNoteEligibility } from '@/lib/fiscal/domain'
 import {
   formatSaudiDate,
   formatSaudiDateTime,
@@ -22,7 +22,6 @@ import { retryFailedSubmissions } from '@/lib/zatca/submission'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
 import { getSandboxValidationStatuses } from '@/lib/zatca/api'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
-import CreateGenerationDebitNoteModal from './CreateGenerationDebitNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { FilterPresetRow } from '@/components/ui/FilterPanel'
@@ -172,15 +171,6 @@ function creditNoteDisabledReason(row: InvoiceRow, role: string | null | undefin
   return null
 }
 
-function debitNoteEligible(row: InvoiceRow, role: string | null | undefined, currentFiscalRegime?: string, policyRevision?: number): boolean {
-  if (!role || !['owner', 'branch'].includes(role) || row.documentType === 'credit_note' || row.documentType === 'debit_note' || row.status !== 'posted') return false
-  return policyRevision != null && resolveDebitNoteEligibility({
-    parentRegime: row.fiscalRegimeAtIssue,
-    parentLifecycle: row.fiscalLifecycleState,
-    currentRegime: currentFiscalRegime === 'generation' || currentFiscalRegime === 'integration' ? currentFiscalRegime : null,
-  }).allowed
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
@@ -209,7 +199,6 @@ export default function InvoicesPage() {
   const [retryingZatca, setRetryingZatca] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [creditModalRow, setCreditModalRow] = useState<InvoiceRow | null>(null)
-  const [debitModalRow, setDebitModalRow] = useState<InvoiceRow | null>(null)
   const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
   const [previousSession, setPreviousSession] = useState<PosSession | null>(null)
   const [previousSessionLoading, setPreviousSessionLoading] = useState(true)
@@ -694,7 +683,6 @@ export default function InvoicesPage() {
       isCreditNote: r.documentType === 'credit_note',
       isDebitNote: r.documentType === 'debit_note',
       creditDisabledReason: creditNoteDisabledReason(r, profile?.role, t, ownerBranches.find(b => b.id === r.branchId)?.fiscal_regime),
-      debitEligible: debitNoteEligible(r, profile?.role, ownerBranches.find(b => b.id === r.branchId)?.fiscal_regime, ownerBranches.find(b => b.id === r.branchId)?.fiscal_policy_revision),
     }
   })
 
@@ -721,7 +709,7 @@ export default function InvoicesPage() {
   }
 
   function renderDocumentActions(document: typeof documentRows[number]) {
-    const { row: r, creditDisabledReason: disabledReason, debitEligible } = document
+    const { row: r, creditDisabledReason: disabledReason } = document
     return (
       <div className="inline-grid w-[74px] grid-cols-2 items-center gap-2" data-invoice-action-slots>
         <button
@@ -733,17 +721,7 @@ export default function InvoicesPage() {
         >
           <Eye size={15} aria-hidden="true" />
         </button>
-        {debitEligible ? (
-          <button
-            type="button"
-            onClick={() => setDebitModalRow(r)}
-            title={t('invoices:createDebitNote')}
-            aria-label={t('invoices:createDebitNote')}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#B5943E]/50 bg-[#fffdf5] text-[#6b5318] shadow-sm transition-[background-color,border-color,color,transform] duration-150 hover:bg-[#fff8dc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B5943E] active:scale-[0.97]"
-          >
-            <FileText size={15} aria-hidden="true" />
-          </button>
-        ) : !disabledReason ? (
+        {!disabledReason ? (
           <button
             type="button"
             onClick={() => setCreditModalRow(r)}
@@ -1339,25 +1317,6 @@ export default function InvoicesPage() {
           if (!result.atomicReceipt) {
             setRefreshKey(key => key + 1)
           }
-        }}
-      />
-      <CreateGenerationDebitNoteModal
-        key={debitModalRow?.id ?? 'closed-generation-debit-note-modal'}
-        open={!!debitModalRow}
-        invoice={debitModalRow ? {
-          id: debitModalRow.id,
-          branch_id: debitModalRow.branchId,
-          invoice_number: debitModalRow.invoiceNumber,
-          total_amount: debitModalRow.totalAmount,
-          fiscal_regime_at_issue: debitModalRow.fiscalRegimeAtIssue,
-          fiscal_lifecycle_state: debitModalRow.fiscalLifecycleState,
-          current_branch_fiscal_regime: ownerBranches.find(branch => branch.id === debitModalRow.branchId)?.fiscal_regime ?? null,
-          current_branch_policy_revision: ownerBranches.find(branch => branch.id === debitModalRow.branchId)?.fiscal_policy_revision ?? null,
-        } : null}
-        onClose={() => setDebitModalRow(null)}
-        onCreated={result => {
-          setDebitModalRow(null)
-          navigate(`/invoices/${result.invoiceId}`)
         }}
       />
       {creditNoteResult && (

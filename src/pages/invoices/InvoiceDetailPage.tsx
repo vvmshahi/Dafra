@@ -20,10 +20,9 @@ import { finalizeGenerationInvoice, getGenerationInvoiceOutputState, submitInvoi
 import { isSandboxFiscalDocument } from '@/lib/zatca/fiscalDocumentScope'
 import { readIssuedDocumentOutputState, renderIssuedDocumentQr, resolveIssuedDocumentReadiness } from '@/lib/invoices/issuedDocumentReadiness'
 import CreateCreditNoteModal, { type CreditNoteCreatedResult } from './CreateCreditNoteModal'
-import CreateGenerationDebitNoteModal from './CreateGenerationDebitNoteModal'
 import AtomicCreditNoteReceiptView from './AtomicCreditNoteReceiptView'
 import { isPermanentDemoSandboxBranch } from '@/lib/zatca/submission'
-import { resolveCreditNoteEligibility, resolveDebitNoteEligibility } from '@/lib/fiscal/domain'
+import { resolveCreditNoteEligibility } from '@/lib/fiscal/domain'
 import { getSandboxValidationStatus, type SandboxValidationResponse } from '@/lib/zatca/api'
 import { updateCachedInvoiceRows, upsertInvoiceListRow } from '@/lib/invoices/invoiceListCache'
 import { documentFromStoredInvoice } from '@/lib/invoices/documentViewAdapters'
@@ -191,7 +190,6 @@ export default function InvoiceDetailPage() {
   const [previewMode, setPreviewMode] = useState<PreviewMode>('a4')
   const [a4PreviewZoom, setA4PreviewZoom] = useState<A4PreviewZoom>('fit')
   const [creditModalOpen, setCreditModalOpen] = useState(false)
-  const [debitModalOpen, setDebitModalOpen] = useState(false)
   const [creditNoteResult, setCreditNoteResult] = useState<CreditNoteCreatedResult | null>(null)
   const [sandboxValidation, setSandboxValidation] = useState<SandboxValidationResponse | null>(null)
   const [generationOutput, setGenerationOutput] = useState<ZatcaFinalizationResult | null>(null)
@@ -606,11 +604,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     setCreditModalOpen(true)
   }
 
-  function openDebitModal() {
-    if (!invoice || !canCreateDebitNote) return
-    setDebitModalOpen(true)
-  }
-
   function handleCreditNoteCreated(result: CreditNoteCreatedResult) {
     if (!invoice) return
     const demo = isPermanentDemoSandboxBranch(invoice.tenant_id, invoice.branch_id)
@@ -824,17 +817,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
     && invoice.status === 'posted'
     && creditEligibility.allowed
     && totalRemainingQuantity > 0.0005
-  const debitEligibility = resolveDebitNoteEligibility({
-    parentRegime: invoice.fiscal_regime_at_issue,
-    parentLifecycle: invoice.fiscal_lifecycle_state,
-    currentRegime: branch?.fiscal_regime ?? null,
-  })
-  const canCreateDebitNote = !isCreditNote
-    && !isDebitNote
-    && canIssueCreditNote
-    && !isCancelled
-    && invoice.status === 'posted'
-    && debitEligibility.allowed
   const creditDisabledReason = isCreditNote
     ? t('invoices:creditNotesCannotBeCredited')
     : invoice.status !== 'posted'
@@ -1010,17 +992,12 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
             <h2 id="document-preview-title" className="text-sm font-bold text-gray-950">{t('invoices:documentPreview')}</h2>
             <p className="mt-0.5 text-xs text-gray-500">{t('invoices:documentPreviewHint')}</p>
             </div>
-            {!isCreditNote && canIssueCreditNote && (canCreateCreditNote || canCreateDebitNote) && (
+            {!isCreditNote && canIssueCreditNote && canCreateCreditNote && (
               <div className="flex flex-wrap gap-2">
                 {canCreateCreditNote && <button ref={creditNoteTriggerRef} type="button" onClick={openCreditModal}
                   className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[#0F2419] bg-white px-3 py-1.5 text-xs font-semibold text-[#0F2419] outline-none transition-colors hover:bg-emerald-50 focus-visible:ring-2 focus-visible:ring-[#0F2419] active:scale-[0.98]">
                   <FileText size={13} aria-hidden="true" />
                   {creditStatus === 'partial' ? t('creditNotes:createAnother') : t('creditNotes:create')}
-                </button>}
-                {canCreateDebitNote && <button type="button" onClick={openDebitModal}
-                  className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[#B5943E] bg-[#fffdf5] px-3 py-1.5 text-xs font-semibold text-[#6b5318] outline-none transition-colors hover:bg-[#fff8dc] focus-visible:ring-2 focus-visible:ring-[#B5943E] active:scale-[0.98]">
-                  <FileText size={13} aria-hidden="true" />
-                  {t('invoices:createDebitNote')}
                 </button>}
               </div>
             )}
@@ -1139,25 +1116,6 @@ ${documentLabel(documentLanguage, 'thankYou')} 🌿`
           window.requestAnimationFrame(() => creditNoteTriggerRef.current?.focus())
         }}
         onCreated={handleCreditNoteCreated}
-      />
-      <CreateGenerationDebitNoteModal
-        key={`${invoice.id}-debit`}
-        open={debitModalOpen}
-        invoice={{
-          id: invoice.id,
-          branch_id: invoice.branch_id,
-          invoice_number: invoice.invoice_number,
-          total_amount: Number(invoice.total_amount),
-          fiscal_regime_at_issue: invoice.fiscal_regime_at_issue,
-          fiscal_lifecycle_state: invoice.fiscal_lifecycle_state,
-          current_branch_fiscal_regime: branch?.fiscal_regime ?? null,
-          current_branch_policy_revision: branch?.fiscal_policy_revision ?? null,
-        }}
-        onClose={() => setDebitModalOpen(false)}
-        onCreated={result => {
-          setDebitModalOpen(false)
-          navigate(`/invoices/${result.invoiceId}`)
-        }}
       />
       {creditNoteResult && (
         <AtomicCreditNoteReceiptView
