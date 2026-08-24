@@ -5,6 +5,7 @@ import { decodeTlvBase64 } from '../supabase/functions/_shared/fiscal/tlv.mjs'
 import { validateGenerationInvoiceSnapshot, GENERATION_ERRORS } from '../supabase/functions/_shared/fiscal/generation_validation.mjs'
 
 const migration = await readFile(new URL('../supabase/migrations/20260824000400_generation_notes_b3.sql', import.meta.url), 'utf8')
+const hotfix = await readFile(new URL('../supabase/migrations/20260824001200_generation_notes_b3_enum_cast_hotfix.sql', import.meta.url), 'utf8')
 const finalizer = await readFile(new URL('../supabase/functions/fiscal-finalize-generation/index.ts', import.meta.url), 'utf8')
 const validation = await readFile(new URL('../supabase/functions/_shared/fiscal/generation_validation.mjs', import.meta.url), 'utf8')
 let count = 0
@@ -23,6 +24,7 @@ check(migration.includes('credit_note_idempotency_key = v_key'), 'note idempoten
 check(migration.includes('IDEMPOTENCY_CONFLICT'), 'conflicting replay is rejected')
 check(migration.includes('generation_note_counters_v1'), 'note numbering is server-owned')
 check(migration.includes("CASE WHEN v_kind = 'credit_note' THEN '381' ELSE '383' END"), 'CN/DN type codes are distinct')
+check(hotfix.includes('v_kind::public.invoice_type'), 'note document type is explicitly cast to the invoice enum')
 check(migration.includes("CASE WHEN v_kind = 'credit_note' THEN 'refunded' ELSE 'pending' END"), 'payment semantics are type-aware')
 check(migration.includes('payment_refunds'), 'credit notes create refund ledger entries')
 check(migration.includes('pos_stock_movements'), 'credit stock return uses canonical stock ledger')
