@@ -89,6 +89,7 @@ DECLARE
   v_plan public.subscription_plans%ROWTYPE;
   v_branch public.branches%ROWTYPE;
   v_intent text;
+  v_legacy_phase integer;
 BEGIN
   SELECT * INTO v_op FROM public.owner_account_provisioning_v2
     WHERE id = p_operation_id FOR UPDATE;
@@ -114,6 +115,7 @@ BEGIN
     WHERE p.id = (v_payload->>'plan_id')::uuid AND p.is_active IS TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'PLAN_NOT_ELIGIBLE'; END IF;
   v_intent := CASE WHEN v_payload->>'fiscal_intent' = 'generation' THEN 'generation' ELSE 'integration' END;
+  v_legacy_phase := CASE WHEN coalesce(v_plan.features, '[]'::jsonb) ? 'zatca_phase2' THEN 2 ELSE 1 END;
 
   INSERT INTO public.tenants (
     name, name_ar, vat_number, cr_number, email, phone, city, address,
@@ -164,7 +166,7 @@ BEGIN
   ) VALUES (
     v_tenant_id, btrim(v_payload->>'company_name'), btrim(v_payload->>'company_name'),
     nullif(btrim(v_payload->>'phone'), ''), nullif(btrim(v_payload->>'city'), ''),
-    'SA', true, true, 'exclusive', 'INV', 'both', true, 1
+    'SA', true, true, 'exclusive', 'INV', 'both', true, v_legacy_phase
   ) RETURNING id INTO v_branch_id;
 
   INSERT INTO public.tenant_onboarding_status (

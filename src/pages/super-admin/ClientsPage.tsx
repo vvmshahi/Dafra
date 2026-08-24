@@ -10,6 +10,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { supabase } from '@/lib/supabase'
 import type { BusinessType, SuperAdminClientBillingSummary } from '@/types'
 import { BUSINESS_TYPE_OPTIONS, businessTypeLabel, resolveBusinessType } from '@/lib/utils/businessType'
+import { commercialPlanTone, displayCommercialPlanName } from '@/lib/billing/commercialPlan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -112,10 +113,7 @@ function getBillingSignal(c: ClientRow): { key: string; className: string } {
 
 function PlanBadge({ plan }: { plan: string | null }) {
   if (!plan) return <span className="text-xs text-gray-400">—</span>
-  const cls = plan === 'Phase 2'
-    ? 'bg-primary-50 text-primary-700'
-    : 'bg-amber-50 text-amber-700'
-  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>{plan}</span>
+  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${commercialPlanTone(plan)}`}>{displayCommercialPlanName(plan)}</span>
 }
 
 function matchesFilter(c: ClientRow, f: StatusFilter): boolean {
@@ -269,6 +267,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
   const [created, setCreated] = useState<CreateOwnerAccountResponse | null>(null)
   const [copied,  setCopied]  = useState(false)
   const idempotencyKeyRef = useRef('')
+  const idempotencyFingerprintRef = useRef('')
 
   useEffect(() => {
     ;(supabase as any)
@@ -309,26 +308,31 @@ function CreateAccountModal({ onCreated, onCancel }: {
 
     setSaving(true)
     try {
-      if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID()
+      const requestPayload = {
+        company_name: companyName.trim(), company_name_ar: companyNameAr.trim() || null,
+        email: email.trim().toLowerCase(), phone: phone.trim() || null, city: city.trim() || null,
+        business_type: businessType, account_type: isDemo ? 'demo' : 'production',
+        fiscal_intent: fiscalRegime === 'generation' ? 'generation' : 'integration_setup',
+        plan_id:         planId, branch_count:    branchCount,
+        payment_type:    paymentType === 'recurring' ? 'monthly' : paymentType,
+        duration_months: isLifetime ? 0 : duration,
+        pay_method: isLifetime ? null : payMethod, pay_ref: isLifetime ? null : (payRef.trim() || null),
+        notes: notes.trim() || null,
+      }
+      const requestFingerprint = JSON.stringify(requestPayload)
+      if (idempotencyKeyRef.current && idempotencyFingerprintRef.current !== requestFingerprint) {
+        idempotencyKeyRef.current = ''
+      }
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = crypto.randomUUID()
+        idempotencyFingerprintRef.current = requestFingerprint
+      }
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('create-owner-account-v2', {
         body: {
-          company_name:    companyName.trim(),
+          ...requestPayload,
           company_name_ar: companyNameAr.trim() || null,
-          email:           email.trim().toLowerCase(),
-          phone:           phone.trim() || null,
-          city:            city.trim() || null,
-          business_type:    businessType,
-          account_type:    isDemo ? 'demo' : 'production',
-          fiscal_intent:   fiscalRegime === 'generation' ? 'generation' : 'integration_setup',
           idempotency_key: idempotencyKeyRef.current,
-          plan_id:         planId,
-          branch_count:    branchCount,
-          payment_type:    paymentType,
-          duration_months: isLifetime ? 0 : duration,
           ends_at:         computeExpiry(),
-          pay_method:      isLifetime ? null : payMethod,
-          pay_ref:         isLifetime ? null : (payRef.trim() || null),
-          notes:           notes.trim() || null,
         },
       })
 
@@ -337,6 +341,8 @@ function CreateAccountModal({ onCreated, onCancel }: {
         throw new Error(result.code ?? fnErr?.message ?? 'FAILED_RECOVERABLE')
       }
       setCreated(result)
+      idempotencyKeyRef.current = ''
+      idempotencyFingerprintRef.current = ''
       setWarning(result.code === 'OWNER_ACCOUNT_CREATED_SETUP_LINK_PENDING' ? t('validation.setupLinkRetry') : '')
     } catch (err: any) {
       console.error('Failed to create client account:', err)
@@ -528,7 +534,7 @@ function CreateAccountModal({ onCreated, onCancel }: {
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">{t('clients.plan')} *</label>
                   <select value={planId} onChange={e => setPlanId(e.target.value)} className="input w-full text-sm h-9">
-                    {plans.map(p => <option key={p.id} value={p.id}>{p.name} — SAR {p.price_monthly}/branch/mo</option>)}
+                    {plans.map(p => <option key={p.id} value={p.id}>{displayCommercialPlanName(p.name)} — SAR {p.price_monthly}/branch/mo</option>)}
                   </select>
                 </div>
                 <div>

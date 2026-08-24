@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { displayCommercialPlanName } from '@/lib/billing/commercialPlan'
 import {
   ArrowLeft, Building2, Users, FileText, CreditCard,
   UserX, UserCheck, Trash2, MapPin, Phone, Mail,
@@ -364,7 +365,7 @@ function ManageSubscriptionModal({ tenantId, existingSub, plans, onSaved, onCanc
               className="input w-full text-sm h-9"
             >
               {plans.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>{displayCommercialPlanName(p.name)}</option>
               ))}
             </select>
           </div>
@@ -1727,7 +1728,7 @@ export default function ClientDetailPage() {
             <>
               <InfoRow label={t('clients.plan')} value={
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary-50 text-primary-700">
-                  {sub.plan?.name ?? '—'}
+                  {displayCommercialPlanName(sub.plan?.name)}
                 </span>
               } />
               <InfoRow label={t('clients.status')} value={

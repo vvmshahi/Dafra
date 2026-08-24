@@ -5,6 +5,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Rial } from '@/components/ui/RiyalSymbol'
 import { supabase } from '@/lib/supabase'
 import { useTranslation } from 'react-i18next'
+import { commercialPlanTone, displayCommercialPlanName } from '@/lib/billing/commercialPlan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -238,9 +239,7 @@ export default function SubscriptionsPage() {
                     <td className="px-5 py-3.5 text-sm font-medium text-gray-900" dir="auto">{r.tenantName}</td>
                     <td className="px-5 py-3.5">
                       {r.plan ? (
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          r.plan === 'Phase 2' ? 'bg-primary-50 text-primary-700' : 'bg-amber-50 text-amber-700'
-                        }`}>{r.plan}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${commercialPlanTone(r.plan)}`}>{displayCommercialPlanName(r.plan)}</span>
                       ) : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-700 tabular-nums">

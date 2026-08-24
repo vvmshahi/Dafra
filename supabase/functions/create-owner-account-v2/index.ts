@@ -66,7 +66,8 @@ Deno.serve(async (req: Request) => {
       ends_at: body.ends_at || null, pay_method: body.pay_method || null, pay_ref: body.pay_ref || null,
       notes: body.notes?.trim() || null, fiscal_intent: fiscalIntent,
     }
-    const fingerprint = await sha256(JSON.stringify(payload))
+    const { ends_at: _unstableExpiry, ...fingerprintPayload } = payload
+    const fingerprint = await sha256(JSON.stringify(fingerprintPayload))
     const auditBase = { tenantId: null, branchId: null, actorUserId: caller.id, actorRole: 'super_admin', targetType: 'owner_account_v2', targetId: null, ipHash: await hashRequestIp(req), requestId: requestId(req) }
     const rate = await enforceRateLimit(admin as any, { ...auditBase, action: 'create_owner_account_v2', scope: 'actor', scopeId: caller.id, maxAttempts: 20, windowSeconds: 86400 })
     if (!rate.allowed) return json(rateLimitBody(rate), 429)

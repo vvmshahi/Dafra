@@ -12,6 +12,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { useTranslation, type TFunction } from 'react-i18next'
+import { commercialPlanTone, displayCommercialPlanName } from '@/lib/billing/commercialPlan'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ export default function SuperAdminDashboard() {
 
       setPlanData(
         Object.entries(planCounts).map(([name, value]) => ({
-          name, value, color: PLAN_COLORS[name] ?? '#6b7280',
+          name: displayCommercialPlanName(name), value, color: PLAN_COLORS[name] ?? '#6b7280',
         }))
       )
 
@@ -386,8 +387,8 @@ export default function SuperAdminDashboard() {
                     <td className="px-6 py-3.5">
                       {tenant.plan ? (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          tenant.plan === 'Phase 2' ? 'bg-primary-50 text-primary-700' : 'bg-amber-50 text-amber-700'
-                        }`}>{tenant.plan}</span>
+                          commercialPlanTone(tenant.plan)
+                        }`}>{displayCommercialPlanName(tenant.plan)}</span>
                       ) : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-6 py-3.5 text-xs text-gray-400" dir="ltr">{tenant.created_at.slice(0, 10)}</td>

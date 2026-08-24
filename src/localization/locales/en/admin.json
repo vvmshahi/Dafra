@@ -252,7 +252,7 @@
     "oneTimePayment": "One-time Payment", "oneTimePaymentHelp": "Client pays once for a fixed period",
     "recurringManual": "Recurring (Manual)", "recurringManualHelp": "Monthly or yearly, renewed manually each period",
     "lifetimeSummary": "Lifetime Free — no expiry, no charge, and not counted in MRR", "notesPlaceholder": "Anything to remember about this client…",
-    "fiscalMode": "Starting invoicing setup", "generationMode": "Not required yet — start with Generation Phase electronic invoicing", "generationModeHelp": "Issue and share invoices now; connect to ZATCA later.", "integrationMode": "Ready to integrate with ZATCA", "integrationModeHelp": "Continue with the ZATCA Integration Phase setup.",
+    "fiscalMode": "Fiscal onboarding path", "generationMode": "Generation Phase", "generationModeHelp": "Issue electronic invoices now; connect to FATOORA later.", "integrationMode": "Integration Phase", "integrationModeHelp": "Prepare this branch for FATOORA integration.",
     "closeAndView": "Close and view client list", "creating": "Creating…"
   },
   "validation": {
