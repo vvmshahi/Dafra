@@ -13,7 +13,7 @@ assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.build_zatca_atomic_re
 assert.match(edge, /rpc\('build_zatca_atomic_receipt_snapshot_v2'/)
 assert.match(invoiceList, /function isGenerationInvoice\(/)
 assert.match(invoiceList, /!isGenerationInvoice\(r, ownerBranches\)/)
-assert.match(invoiceList, /generationFinalizationRequired/)
+assert.match(invoiceList, /t\('invoices:notRequired'\)/)
 assert.match(pos, /receipt\.canPrint\s*\?/)
 assert.match(pos, /const paymentReceiptReady = Boolean\(receipt\.invoiceId\)/)
 assert.match(detail, /finalizeGenerationInvoice\(/)

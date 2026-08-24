@@ -643,7 +643,6 @@ export default function InvoicesPage() {
 
   const documentRows = filtered.map(r => {
     const generationInvoice = isGenerationInvoice(r, ownerBranches)
-    const generationIssued = generationInvoice && r.fiscalLifecycleState === 'generation_issued'
     const zatcaBase = generationInvoice
       ? ZATCA_BADGE.not_submitted
       : ZATCA_BADGE[r.displayZatcaStatus] ?? ZATCA_BADGE.pending
@@ -658,13 +657,6 @@ export default function InvoicesPage() {
     const zatca = generationInvoice
       ? { ...zatcaBase, label: t('invoices:notRequired') }
       : { ...zatcaBase, label: t(`invoices:${zatcaKey}`) }
-    const fiscalStatus = generationInvoice ? {
-      label: t(generationIssued ? 'invoices:generationIssued' : 'invoices:generationFinalizationRequired'),
-      bg: generationIssued ? 'bg-emerald-50' : 'bg-amber-50',
-      text: generationIssued ? 'text-emerald-700' : 'text-amber-700',
-      ring: generationIssued ? 'ring-emerald-600/20' : 'ring-amber-600/20',
-      dot: generationIssued ? 'bg-emerald-500' : 'bg-amber-500',
-    } : null
     const payBase = r.paymentMethod ? (PAY_BADGE[r.paymentMethod] ?? PAY_BADGE.other) : null
     const pay = payBase ? {
       ...payBase,
@@ -678,7 +670,6 @@ export default function InvoicesPage() {
     return {
       row: r,
       zatca,
-      fiscalStatus,
       pay,
       isCancelled: r.status === 'cancelled',
       isCreditNote: r.documentType === 'credit_note',
@@ -1084,7 +1075,7 @@ export default function InvoicesPage() {
                       [t('invoices:vat'), 'text-end'],
                       [t('invoices:total'), 'text-end'],
                       [t('invoices:method'), 'text-center'],
-                  ['ZATCA / fiscal', 'text-center'],
+                      ['ZATCA Status', 'text-center'],
                       [t('invoices:documentActions'), 'text-center'],
                     ].map(([label, alignment]) => (
                       <th
@@ -1099,7 +1090,7 @@ export default function InvoicesPage() {
                 </thead>
                 <tbody>
                   {documentRows.map(document => {
-                    const { row: r, zatca, fiscalStatus, pay, isCancelled, isCreditNote } = document
+                    const { row: r, zatca, pay, isCancelled, isCreditNote } = document
                     return (
                       <tr
                         key={r.id}
@@ -1147,12 +1138,7 @@ export default function InvoicesPage() {
                         <td className="px-2.5 py-2 text-center align-top">
                           {pay ? <DocumentBadge {...pay} /> : <span className="text-xs text-gray-300">—</span>}
                         </td>
-                        <td className="px-2.5 py-2 text-center align-top">
-                          <div className="flex flex-col items-center gap-1">
-                            <DocumentBadge {...zatca} />
-                            {fiscalStatus && <DocumentBadge {...fiscalStatus} />}
-                          </div>
-                        </td>
+                        <td className="px-2.5 py-2 text-center align-top"><DocumentBadge {...zatca} /></td>
                         <td className="px-2.5 py-1.5 text-center align-top">{renderDocumentActions(document)}</td>
                       </tr>
                     )
@@ -1180,7 +1166,7 @@ export default function InvoicesPage() {
 
             <div className="grid gap-3 p-3 lg:hidden sm:grid-cols-2" data-invoice-mobile-cards>
               {documentRows.map(document => {
-                const { row, zatca, fiscalStatus, pay, isCancelled, isCreditNote } = document
+                const { row, zatca, pay, isCancelled, isCreditNote } = document
                 return (
                   <article
                     key={row.id}
@@ -1223,8 +1209,8 @@ export default function InvoicesPage() {
                         <dd className="mt-1">{pay ? <DocumentBadge {...pay} /> : <span className="text-xs text-gray-300">—</span>}</dd>
                       </div>
                       <div className="min-w-0">
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">ZATCA / fiscal</dt>
-                        <dd className="mt-1 flex flex-col items-start gap-1"><DocumentBadge {...zatca} />{fiscalStatus && <DocumentBadge {...fiscalStatus} />}</dd>
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-gray-400 rtl:normal-case rtl:tracking-normal">ZATCA Status</dt>
+                        <dd className="mt-1"><DocumentBadge {...zatca} /></dd>
                       </div>
                     </dl>
 

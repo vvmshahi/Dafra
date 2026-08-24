@@ -545,7 +545,7 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
   assert.equal(canOpenStoredInvoicePrint(false, 'FINAL-QR', 'ready', 'data:image/png;base64,qr'), false)
   assert.match(invoiceDetail, /async function handlePrintA4\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentPageDocument\('kubri-print-root', 'invoice', validate\)/)
   assert.match(invoiceDetail, /async function handlePrintThermal\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentPageDocument\('kubri-print-root', 'receipt', validate\)/)
-  assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !printReady\}/)
+  assert.match(invoiceDetail, /disabled=\{thermalPrinting \|\| !receiptPrintReady\}/)
   assert.match(invoiceDetail, /disabled=\{a4Printing \|\| !printReady\}/)
   assert.match(receiptPrint, /async function handlePrint\(\)[\s\S]*?executeAndroidPrint\([\s\S]*?printCurrentDocument\(\)/)
   const invoiceAutoPrint = invoiceDetail.slice(
@@ -571,7 +571,7 @@ await test('thermal and A4 printing require the finalized rendered QR', () => {
     assert.match(page, /toast\.error\(t\('printing:qrUnavailable'\)\)/)
   }
   assert.match(pos, /const printReady = receipt\.isDemo\s*\?\s*receipt\.canPrint\s*:\s*receipt\.canPrint && qrStatus === 'ready' && Boolean\(qrDataUrl\)/)
-  assert.match(pos, /disabled=\{printingReceipt \|\| !printReady\}/)
+  assert.match(pos, /disabled=\{printingReceipt \|\| !paymentReceiptReady\}/)
   assert.match(pos, /disabled=\{!printReady\}/)
   assert.match(receiptPrint, /qrUnavailable/)
   assert.doesNotMatch(invoiceDetail, /outputReady/)
