@@ -37,7 +37,8 @@ Deno.serve(async req => {
   try {
     const url = Deno.env.get('SUPABASE_URL')
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    if (!url || !serviceKey) return response({ error: GENERATION_ERRORS.FINALIZATION_FAILED }, 500)
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    if (!url || !serviceKey || !anonKey) return response({ error: GENERATION_ERRORS.FINALIZATION_FAILED }, 500)
     const token = req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
     if (!token) return response({ error: 'FISCAL_POLICY_UNAUTHORIZED' }, 401)
     const body = await req.json()
@@ -53,16 +54,21 @@ Deno.serve(async req => {
     const { data: user, error: authError } = await db.auth.getUser(token)
     if (authError || !user.user) return response({ error: 'FISCAL_POLICY_UNAUTHORIZED' }, 401)
     const actorId = user.user.id
+    const authenticatedDb = createClient(url, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    })
 
-    const [{ data: invoice, error: invoiceError }, { data: snapshot, error: snapshotError }, { data: branch, error: branchError }] = await Promise.all([
+    const [{ data: policy, error: policyError }, { data: invoice, error: invoiceError }, { data: snapshot, error: snapshotError }, { data: branch, error: branchError }] = await Promise.all([
+      authenticatedDb.rpc('resolve_fiscal_policy', { p_branch_id: branch_id }),
       db.from('invoices').select('id, invoice_number, branch_id, tenant_id, status, zatca_invoice_type, original_invoice_id, fiscal_lifecycle_state, fiscal_document_snapshot_hash').eq('id', invoice_id).maybeSingle(),
       db.rpc('build_zatca_atomic_receipt_snapshot_v2', { p_invoice_id: invoice_id }),
       db.from('branches').select('id, tenant_id, fiscal_regime, fiscal_activation_state, fiscal_policy_revision').eq('id', branch_id).maybeSingle(),
     ])
-    if (invoiceError || snapshotError || branchError || !invoice || !snapshot || !branch || invoice.branch_id !== branch_id || branch.fiscal_regime !== 'generation') {
+    if (policyError || !policy || invoiceError || snapshotError || branchError || !invoice || !snapshot || !branch || invoice.branch_id !== branch_id || policy.regime !== 'generation') {
       return response({ error: GENERATION_ERRORS.POLICY_INVALID }, 422)
     }
-    if (branch.fiscal_policy_revision !== expected_policy_revision) return response({ error: 'FISCAL_POLICY_CHANGED' }, 409)
+    if (policy.policyRevision !== expected_policy_revision) return response({ error: 'FISCAL_POLICY_CHANGED' }, 409)
     if (invoice.status !== 'posted' || invoice.original_invoice_id || !['simplified', 'standard'].includes(invoice.zatca_invoice_type)) {
       return response({ error: GENERATION_ERRORS.VALIDATION_FAILED }, 422)
     }
